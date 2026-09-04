@@ -1,0 +1,42 @@
+.aws/
+*.pem
+*.cer
+*.crt
+*.key
+.env
+.env.*
+!.env.example
+
+# AWS CDK (if using CDK)
+.cdk.staging/
+cdk.out/
+
+# AWS SAM (if using Serverless Application Model)
+.aws-sam/
+
+# Terraform (if using Terraform for AWS infrastructure)
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Serverless Framework
+.serverless/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Node.js (if using AWS Lambda / CDK in Node)
+node_modules/
+dist/
+build/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
