@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* I'm keeping the basic page setup simple so Tailwind can control the design. */
+body {
+  margin: 0;
+}
