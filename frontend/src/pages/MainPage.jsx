@@ -46,7 +46,7 @@ function MainPage() {
     // Add the new report to the map.
     setFeltReports((reports) => [...reports, reportLocation]);
 
-    // Later this will send the report to the backend.
+    // TODO: Later this will send the report to the backend.
     // The backend will save the user ID, location and time.
   };
 
