@@ -1,64 +1,60 @@
 import json
+import math
+import os
 import urllib.request
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
+import boto3
+from boto3.dynamodb.conditions import Attr
+
+# Toggle local vs cloud
+USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
+
+if USE_LOCAL_DB:
+    dynamodb = boto3.resource(
+        "dynamodb",
+        endpoint_url="http://localhost:8000",
+        region_name="us-east-1",
+        aws_access_key_id="dummy",
+        aws_secret_access_key="dummy",
+    )
+else:
+    # For local-to-cloud testing. Change profile name to whatever you have set up on your device
+    session = boto3.Session(profile_name="dyft-dev", region_name="us-east-1")
+    dynamodb = session.resource("dynamodb")
+
+table = dynamodb.Table("DYFT-Checkins")
+GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured"
 
 
-def fetch_live_geonet_data():
-    """Fetch real-time sensor measurements from GeoNet REST API"""
-    url = "https://api.geonet.org.nz//intensity?type=measured"
+def haversine_km(lat1, lon1, lat2, lon2):
+    # TODO: Implement haversine
+    return NotImplementedError
+
+
+def get_geonet_features():
     """
-    /intensity?type=(measured|reported)[&aggregation=(max|median)][&publicID=(publicID)]
-    no public ID = info obtained will be from the last hour
+    Obtain features from GeoNet:
+    Latitude, Longitude, MMI >= 4
     """
-    headers = {"Accept": "application/vnd.geo+json;version=2"}
-
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode("utf-8"))
-                return data.get("features", [])
-    except Exception as e:
-        print(f"Error connecting to Geonet: {e}")
-        return []
+    # TODO: Implement method
+    return NotImplementedError
 
 
 def lambda_handler(event, context):
-    """Entry point for AWS Lambda"""
-    print("Starting GeoNet seismic verification process...")
+    # Get features
 
-    sensors = fetch_live_geonet_data()
-    print(f"Retrieved {len(sensors)} active sensor readings.")
+    # Filter strictly for unverified CHECKIN items in the single-table layout
 
-    # Mock data (with UoW coords for future reference)
-    # TODO: Replace with a `boto3`db call that scans DynamoDB for real unverified user check-ins.
-    mock_checkins = [
-        {
-            "checkin_id": "test_user",
-            "latitude": -37.7855,
-            "longitude": 175.3083,
-            "verified": False,
-        }
-    ]
+    # For each unverified report
+    # For each feature
+    # If < 50km (haversine)
+    # Update verified bool
 
-    processed_count = 0
-    for report in mock_checkins:
-        # TODO: Add the Haversine (formula) distance algorithm here to calculate distance between
-        # each user check-in point (lat, lon) and every station point in `sensors`
-        # TODO: If sensor reading falls within x km of a user check-in and records an intensity value MMI >= 4,
-        # set verified = True, then update the record in DynamoDB
-        report["verified"] = True
-        processed_count += 1
-
-    return {
-        "statusCode": 200,
-        "body": json.dumps(
-            {"message": f"Successfully processed {processed_count} check-ins."}
-        ),
-        "DEV LOG": "!!!REMOVE THIS!!! Note: this is just to test if we can connect to the API. Processed count is mock data!",
-    }
+    return NotImplementedError
 
 
-# Local test trigger
 if __name__ == "__main__":
-    result = lambda_handler(event={}, context=None)
-    print("Results:", result)
+    print(f"Running verifier locally (Local DB: {USE_LOCAL_DB})...")
+    print("Result:", lambda_handler({}, None))
