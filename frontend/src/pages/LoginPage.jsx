@@ -1,12 +1,71 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { confirmSignUp, getCurrentUser, signIn, signUp } from "aws-amplify/auth";
 
 function LoginPage({ onLogin }) {
   // Keeps track of whether we are showing Login or Register.
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false); //controls if cogito is asking for email confirmation
+  //user input 
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmationCode, setConfirmationCode] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    getCurrentUser()
+      .then(() => onLogin())
+      .catch(() => {
+        // No existing Cognito session; keep showing the login form.
+      });
+  }, [onLogin]);
 
   // Switches between Login and Register.
   const switchForm = () => {
     setIsRegistering(!isRegistering);
+    setIsConfirming(false);
+    setError("");
+    setMessage("");
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setIsSubmitting(true);
+
+    try {
+      if (isConfirming) {
+        await confirmSignUp({ username, confirmationCode });
+        setIsConfirming(false);
+        setIsRegistering(false);
+        setMessage("Your account is confirmed. You can now log in.");
+      } else if (isRegistering) {
+        const result = await signUp({
+          username,
+          password,
+          options: { userAttributes: { email } },
+        });
+
+        if (result.nextStep.signUpStep === "CONFIRM_SIGN_UP") {
+          setIsConfirming(true);
+          setMessage("Check your email for the confirmation code.");
+        }
+      } else {
+        const result = await signIn({ username: email, password });
+        if (result.isSignedIn) {
+          onLogin();
+        } else {
+          setError("Additional step required: " + result.nextStep.signInStep);
+        }
+      }
+    } catch (authError) {
+      setError(authError.message || "Authentication failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -23,21 +82,14 @@ function LoginPage({ onLogin }) {
         </h1>
 
         <h2 className="text-xl font-semibold text-center text-gray-700 mb-6">
-          {isRegistering
+          {isConfirming
+            ? "Confirm Your Account"
+            : isRegistering
             ? "Create an Account"
             : "Check earthquakes and report if you felt one by logging in"}
         </h2>
 
-        <form
-          onSubmit={(event) => {
-            // Stops the browser from refreshing the page.
-            event.preventDefault();
-
-            // For now, Login and Register both go to the main page.
-            onLogin();
-          }}
-          className="space-y-4"
-        >
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Email input */}
           <div>
             <label
@@ -50,6 +102,9 @@ function LoginPage({ onLogin }) {
             <input
               id="email"
               type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={isConfirming}
               placeholder="Enter your email"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -57,8 +112,28 @@ function LoginPage({ onLogin }) {
             />
           </div>
 
+          {/* Cognito requires a separate username when email is configured as an alias. */}
+          {!isConfirming && isRegistering && <div>
+            <label
+              htmlFor="username"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Username
+            </label>
+            <input
+              id="username"
+              type="text"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="Choose a username"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>}
+
           {/* Password input */}
-          <div>
+          {!isConfirming && <div>
             <label
               htmlFor="password"
               className="block text-sm font-medium text-gray-700 mb-1"
@@ -69,25 +144,57 @@ function LoginPage({ onLogin }) {
             <input
               id="password"
               type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
               placeholder="Enter your password"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
-          </div>
+          </div>}
+
+          {isConfirming && <div>
+            <label
+              htmlFor="confirmationCode"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Confirmation code
+            </label>
+            <input
+              id="confirmationCode"
+              type="text"
+              value={confirmationCode}
+              onChange={(event) => setConfirmationCode(event.target.value)}
+              placeholder="Enter the code from your email"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>}
 
           {/* Login/Register button */}
           <button
             type="submit"
+            disabled={isSubmitting}
             className="w-full bg-blue-600 text-white py-3 rounded-lg
-                       font-semibold hover:bg-blue-700 transition cursor-pointer"
+                       font-semibold hover:bg-blue-700 transition cursor-pointer
+                       disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isRegistering ? "Create Account" : "Login"}
+            {isSubmitting
+              ? "Please wait..."
+              : isConfirming
+              ? "Confirm Account"
+              : isRegistering
+                ? "Create Account"
+                : "Login"}
           </button>
         </form>
 
         {/* Switch between Login and Register */}
-        <div className="text-center mt-6 text-sm text-gray-600">
+        {message && <p className="mt-4 text-center text-sm text-green-700">{message}</p>}
+        {error && <p className="mt-4 text-center text-sm text-red-600">{error}</p>}
+
+        {!isConfirming && <div className="text-center mt-6 text-sm text-gray-600">
           {isRegistering
             ? "Already have an account?"
             : "Don't have an account?"}
@@ -99,7 +206,7 @@ function LoginPage({ onLogin }) {
           >
             {isRegistering ? "Login" : "Register"}
           </button>
-        </div>
+        </div>}
       </div>
     </main>
   );
