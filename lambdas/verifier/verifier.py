@@ -25,7 +25,10 @@ else:
     dynamodb = session.resource("dynamodb")
 
 table = dynamodb.Table("DYFT-Checkins")
-GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured"
+# GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured" # Response: Shakes (unverified earthquakes)
+GEONET_MMI_URL = (
+    "https://api.geonet.org.nz/quake?MMI=4"  # Response: Verified earthquakes
+)
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -60,28 +63,64 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return distance
 
 
-def get_geonet_features():
+def get_geonet_features(minutes=7200):
     """
     Obtain features from GeoNet:
-    Latitude, Longitude, MMI >= 4
+    Latitude, Longitude, MMI >= 4, Quality = not deleted
+    For verified earthquakes from the past 30 minutes
+
+    Note: For Testing, use 14400 for past 10 days or 7200 for past 5 days, otherwise change to 30
     """
     req = urllib.request.Request(
         GEONET_MMI_URL, headers={"User-Agent": "DYFT-SeismicVerifier"}
     )
 
+    cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
     try:
         with urllib.request.urlopen(req) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode("utf-8"))
-                return [
-                    {
-                        "lat": f["geometry"]["coordinates"][1],
-                        "lon": f["geometry"]["coordinates"][0],
-                        "mmi": f["properties"]["mmi"],
-                    }
-                    for f in data.get("features", [])
-                    if f["properties"].get("mmi", 0) >= 4
-                ]
+                verified_quakes = []
+
+                # Go through GeoNet data
+                for f in data.get("features", []):
+                    props = f.get("properties", {})
+                    mmi = props.get("mmi", 0)
+                    quality = props.get("quality", "")
+                    time_string = props.get("time")
+                    locality = props.get("locality", "")
+
+                    # Filter out deleted/non-verified items and MMI < 4
+                    if quality not in ["best", "reviewed", "automatic", "preliminary"]:
+                        continue
+                    if not (4 <= mmi <= 8):
+                        continue
+
+                    # Filter last 30 minutes
+                    if time_string:
+                        quake_time = datetime.fromisoformat(
+                            time_string.replace("Z", "+00:00")
+                        )
+                        if quake_time < cutoff_time:
+                            continue
+
+                    # Otherwise, save features
+                    coords = f.get("geometry", {}).get("coordinates", [])
+                    if len(coords) >= 2:
+                        verified_quakes.append(
+                            {
+                                "publicID": props.get("publicID"),
+                                "lat": coords[1],
+                                "lon": coords[0],
+                                "mmi": mmi,
+                                "quality": quality,
+                                "time": time_string,
+                                "locality": locality,
+                            }
+                        )
+
+                return verified_quakes
     except Exception as e:
         print(f"Error calling GeoNet API: {e}")
     return []
