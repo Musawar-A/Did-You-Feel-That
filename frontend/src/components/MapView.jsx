@@ -1,61 +1,70 @@
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { useEffect } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  CircleMarker,
+  useMap,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
-function MapView() {
-  // These are temporary coordinates for Hamilton.
-  // Later, the map will automatically use the user's location.
-  const hamiltonPosition = [-37.787, 175.279];
+function LocationUpdater({ userLocation }) {
+  const map = useMap();
+
+  useEffect(() => {
+    // Move the map to the user's location.
+    if (userLocation) {
+      map.setView([userLocation.latitude, userLocation.longitude], 13);
+    }
+  }, [userLocation, map]);
+
+  return null;
+}
+
+function MapView({ userLocation, feltReports = [] }) {
+  // Show Auckland first if the user's location is not ready yet.
+  const defaultPosition = [-36.8485, 174.7633];
 
   return (
-    // h-full = use all available height.
-    // w-full = use all available width.
+    // Make the map fill the whole area.
     <div className="h-full w-full">
       <MapContainer
-        center={hamiltonPosition}
+        center={defaultPosition}
         zoom={10}
         className="h-full w-full"
       >
-        {/* 
-          TileLayer provides the actual map background.
-          Leaflet controls the map, while these tiles give us
-          the roads, land and other map details.
-        */}
+        {/* Loads the map tiles. */}
         <TileLayer
           attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* 
-          This is a temporary earthquake marker.
-          Later, these coordinates will come from GeoNet.
-        */}
-        <Marker position={hamiltonPosition}>
-          {/* 
-            Popup appears when the user clicks the earthquake marker.
-          */}
-          <Popup>
-            {/* Basic information about this earthquake. */}
-            <strong>M4.8 Earthquake</strong>
-            <br />
-            Near Hamilton
-            <br />
-            12 people felt it
-            <br />
-            <br />
-            {/* 
-            This button lets the user report that they felt this earthquake.
-            For now it only displays the button.
-            Later, clicking it will send the report to our backend.
-        */}
-            <button
-              type="button"
-              className="bg-stone-800 text-white px-4 py-2 rounded-lg
-                    font-semibold hover:bg-stone-500 cursor-pointer"
-            >
-              I FELT IT
-            </button>
-          </Popup>
-        </Marker>
+        {/* Move the map when the user's location is found. */}
+        <LocationUpdater userLocation={userLocation} />
+
+        {/* Show where the current user is. */}
+        {userLocation && (
+          <Marker position={[userLocation.latitude, userLocation.longitude]}>
+            <Popup>You are here</Popup>
+          </Marker>
+        )}
+
+        {/* Show red circles for people who reported feeling an earthquake. */}
+        {feltReports.map((report, index) => (
+          <CircleMarker
+            key={index}
+            center={[report.latitude, report.longitude]}
+            radius={8}
+            pathOptions={{
+              color: "red",
+              fillColor: "red",
+              fillOpacity: 0.8,
+            }}
+          >
+            <Popup>Someone reported feeling an earthquake here.</Popup>
+          </CircleMarker>
+        ))}
       </MapContainer>
     </div>
   );
