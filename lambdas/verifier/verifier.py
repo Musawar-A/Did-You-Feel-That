@@ -65,12 +65,36 @@ def get_geonet_features():
     Obtain features from GeoNet:
     Latitude, Longitude, MMI >= 4
     """
-    # TODO: Implement method
-    return NotImplementedError
+    req = urllib.request.Request(
+        GEONET_MMI_URL, headers={"User-Agent": "DYFT-SeismicVerifier"}
+    )
+
+    try:
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode("utf-8"))
+                return [
+                    {
+                        "lat": f["geometry"]["coordinates"][1],
+                        "lon": f["geometry"]["coordinates"][0],
+                        "mmi": f["properties"]["mmi"],
+                    }
+                    for f in data.get("features", [])
+                    if f["properties"].get("mmi", 0) >= 4
+                ]
+    except Exception as e:
+        print(f"Error calling GeoNet API: {e}")
+    return []
 
 
 def lambda_handler(event, context):
     # Get features
+    features = get_geonet_features()
+
+    print(f"# of features with MMI>=4: {len(features)}")
+
+    print("Sample output:")
+    print(json.dumps(features[:10], indent=2))
 
     # Filter strictly for unverified CHECKIN items in the single-table layout
 
@@ -79,9 +103,18 @@ def lambda_handler(event, context):
     # If < 50km (haversine)
     # Update verified bool
 
-    return NotImplementedError
+    return {
+        "statusCode": 200,
+        "body": json.dumps(
+            {
+                "message": "Debug execution done!",
+                "feature_cound": len(features),
+                "sample": features[:10],
+            }
+        ),
+    }
 
 
 if __name__ == "__main__":
-    print(f"Running verifier locally (Local DB: {USE_LOCAL_DB})...")
+    # print(f"Running verifier locally (Local DB: {USE_LOCAL_DB})...")
     print("Result:", lambda_handler({}, None))
