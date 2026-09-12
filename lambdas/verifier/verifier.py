@@ -25,10 +25,11 @@ else:
     dynamodb = session.resource("dynamodb")
 
 table = dynamodb.Table("DYFT-Checkins")
-# GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured" # Response: Shakes (unverified earthquakes)
-GEONET_MMI_URL = (
-    "https://api.geonet.org.nz/quake?MMI=4"  # Response: Verified earthquakes
-)
+
+# For Shakes (unverified earthquakes), use intensity type=measured
+# GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured"
+# For verified earthquakes, use quake with minimum MMi=4
+GEONET_MMI_URL = "https://api.geonet.org.nz/quake?MMI=4"
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -129,11 +130,9 @@ def get_geonet_features(minutes=7200):
 def lambda_handler(event, context):
     # Get features
     features = get_geonet_features()
-
-    print(f"# of features with MMI>=4: {len(features)}")
-
-    print("Sample output:")
-    print(json.dumps(features[:10], indent=2))
+    fifteen_mins_ago = (
+        datetime.now(timezone.utc) - timedelta(minutes=15)
+    ).fromisoformat()
 
     # Filter strictly for unverified CHECKIN items in the single-table layout
 
@@ -141,6 +140,12 @@ def lambda_handler(event, context):
     # For each feature
     # If < 50km (haversine)
     # Update verified bool
+
+    # DEBUG: REMOVE
+    print(f"# of features with MMI>=4: {len(features)}")
+
+    print("Sample output:")
+    print(json.dumps(features[:10], indent=2))
 
     return {
         "statusCode": 200,
