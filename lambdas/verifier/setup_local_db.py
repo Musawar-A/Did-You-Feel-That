@@ -34,7 +34,9 @@ def init_db():
         table.wait_until_exists()
         print("Table 'DYFT-Checkins' created locally with PK and SK.")
     except Exception as e:
-        print(f"Table notification: {e}")
+        print(
+            f"Table notification: {e}. If you're running this after resetting local DB, you can ignore this message."
+        )
         table = dynamodb.Table("DYFT-Checkins")
 
     # Seed a mock unverified report using PK and SK
