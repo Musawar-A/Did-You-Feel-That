@@ -8,7 +8,7 @@ from decimal import Decimal
 import boto3
 from boto3.dynamodb.conditions import Attr
 
-# Toggle local vs cloud
+# Toggle local vs cloud. Change this to False to use AWS DynamoDB
 USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
 
 if USE_LOCAL_DB:
