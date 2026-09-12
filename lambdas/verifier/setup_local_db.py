@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import boto3
@@ -40,14 +41,27 @@ def init_db():
         table = dynamodb.Table("DYFT-Checkins")
 
     # Seed a mock unverified report using PK and SK
+    timenow = datetime.now(timezone.utc).isoformat()
     table.put_item(
         Item={
             "PK": "CHECKIN#rep_hamilton_001",
-            "SK": "REPORT#2026-09-11T01:00:00Z",
+            "SK": "REPORT#" + timenow,
             "entity_type": "CHECKIN",
             "latitude": Decimal("-37.7870"),
             "longitude": Decimal("175.3040"),
-            "timestamp": "2026-09-11T01:00:00Z",
+            "timestamp": timenow,
+            "verified": False,
+        }
+    )
+    # Add more here. You can add verified GeoNet stuff to test.
+    table.put_item(
+        Item={
+            "PK": "CHECKIN#rep_tamarunui_002",
+            "SK": "REPORT#2026-09-11T04:30:00Z",
+            "entity_type": "CHECKIN",
+            "latitude": Decimal("-38.9744"),
+            "longitude": Decimal("175.2558"),
+            "timestamp": timenow,
             "verified": False,
         }
     )

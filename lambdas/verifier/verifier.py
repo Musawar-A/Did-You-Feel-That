@@ -127,21 +127,65 @@ def get_geonet_features(minutes=7200):
     return []
 
 
+def get_mock_geonet_features(minutes=30):
+    """
+    FOR TESTING ONLY
+    Creates a mock verified earthquake.
+    Used to test if verifier works (flipping the verifier bool).
+    """
+    return [
+        {
+            "publicID": "test_quake_001",
+            "lat": -37.787,  # e.g., Hamilton, NZ
+            "lon": 175.304,
+            "mmi": 5,
+            "quality": "best",
+            "time": "2026-09-12T07:00:00.000Z",
+        }
+    ]
+
+
 def lambda_handler(event, context):
     # Get features
-    features = get_geonet_features()
-    fifteen_mins_ago = (
-        datetime.now(timezone.utc) - timedelta(minutes=15)
-    ).fromisoformat()
+    features = get_geonet_features()  # Actual Data. USE THIS
+    # features = get_mock_geonet_features()  # Mock Data. FOR TESTING
+    fifteen_mins_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
 
     # Filter strictly for unverified CHECKIN items in the single-table layout
+    response = table.scan(
+        FilterExpression=(
+            Attr("entity_type").eq("CHECKIN")
+            & Attr("verified").eq(False)
+            & Attr("timestamp").gte(fifteen_mins_ago)
+        )
+    )
+    unverified_reports = response.get("Items", [])
+    verified_count = 0
 
     # For each unverified report
-    # For each feature
-    # If < 50km (haversine)
-    # Update verified bool
+    for report in unverified_reports:
+        u_lat, u_lon = float(report["latitude"]), float(report["longitude"])
+        pk = report["PK"]
+        sk = report["SK"]
 
-    # DEBUG: REMOVE
+        # For each feature
+        for feat in features:
+            # If < 50km (haversine)
+            if haversine_km(u_lat, u_lon, feat["lat"], feat["lon"]) <= 50.0:
+                # Update verified bool
+                table.update_item(
+                    Key={"PK": pk, "SK": sk},
+                    UpdateExpression="SET verified = :v, mmi_value = :m, verified_at = :t",
+                    ExpressionAttributeValues={
+                        ":v": True,
+                        ":m": Decimal(str(feat["mmi"])),
+                        ":t": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                verified_count += 1
+                break
+
+    # DEBUG: REMOVE BELOW
     print(f"# of features with MMI>=4: {len(features)}")
 
     print("Sample output:")
@@ -152,13 +196,16 @@ def lambda_handler(event, context):
         "body": json.dumps(
             {
                 "message": "Debug execution done!",
-                "feature_cound": len(features),
+                "feature_count": len(features),
                 "sample": features[:10],
+                "processed": len(unverified_reports),
+                "verified": verified_count,
             }
         ),
     }
+    # DEBUG END: REMOVE ABOVE
 
 
 if __name__ == "__main__":
-    # print(f"Running verifier locally (Local DB: {USE_LOCAL_DB})...")
+    print(f"Running verifier locally (Local DB: {USE_LOCAL_DB})...")
     print("Result:", lambda_handler({}, None))
