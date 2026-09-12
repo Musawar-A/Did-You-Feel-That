@@ -29,8 +29,35 @@ GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured"
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
-    # TODO: Implement haversine
-    return NotImplementedError
+    """
+    Calculate distance between two points from the globe.
+    """
+    # Earth's radius in km
+    R = 6371.0
+
+    # Make sure they're Floats
+    lat1, lon1, lat2, lon2 = (
+        float(lat1),
+        float(lon1),
+        float(lat2),
+        float(lon2),
+    )
+
+    # Get difference in coords (in radians)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+
+    # Haversine
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    distance = R * c
+
+    return distance
 
 
 def get_geonet_features():
