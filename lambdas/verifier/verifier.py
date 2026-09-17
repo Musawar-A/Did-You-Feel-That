@@ -188,11 +188,6 @@ def lambda_handler(event, context):
                 verified_count += 1
                 break
 
-    print(f"# of features with MMI>=4: {len(features)}")
-
-    print("Sample output:")
-    print(json.dumps(features[:10], indent=2))
-
     return {
         "statusCode": 200,
         "body": json.dumps(
