@@ -8,27 +8,14 @@ from decimal import Decimal
 import boto3
 from boto3.dynamodb.conditions import Attr
 
-# Toggle local vs cloud. Change this to False to use AWS DynamoDB
-USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
+LAMBDA_NAME = "DYFT-SeismicVerifier"
+DB_TABLE_NAME = "DYFT-DataYouFeelThat"
 
-if USE_LOCAL_DB:
-    dynamodb = boto3.resource(
-        "dynamodb",
-        endpoint_url="http://localhost:8000",
-        region_name="us-east-1",
-        aws_access_key_id="dummy",
-        aws_secret_access_key="dummy",
-    )
-else:
-    # For local-to-cloud testing. Change profile name to whatever you have set up on your device
-    session = boto3.Session(profile_name="dyft-dev", region_name="us-east-1")
-    dynamodb = session.resource("dynamodb")
+# DynamoDB
+dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+table = dynamodb.Table(DB_TABLE_NAME)
 
-table = dynamodb.Table("DYFT-Checkins")
-
-# For Shakes (unverified earthquakes), use intensity type=measured
-# GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured"
-# For verified earthquakes, use quake with minimum MMi=4
+# For verified earthquakes, use quake with minimum MMI=4
 GEONET_MMI_URL = "https://api.geonet.org.nz/quake?MMI=4"
 
 
@@ -64,17 +51,16 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return distance
 
 
-def get_geonet_features(minutes=7200):
+def get_geonet_features(minutes):
     """
     Obtain features from GeoNet:
     Latitude, Longitude, MMI >= 4, Quality = not deleted
     For verified earthquakes from the past 30 minutes
 
-    Note: For Testing, use 14400 for past 10 days or 7200 for past 5 days, otherwise change to 30
+    Note: For Testing, use 14400 for past 10 days or 7200 for past 5 days, otherwise change to 30.
+    minutes can be changed in the Lambda's Environment Variables
     """
-    req = urllib.request.Request(
-        GEONET_MMI_URL, headers={"User-Agent": "DYFT-SeismicVerifier"}
-    )
+    req = urllib.request.Request(GEONET_MMI_URL, headers={"User-Agent": LAMBDA_NAME})
 
     cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
@@ -146,15 +132,21 @@ def get_mock_geonet_features(minutes=30):
 
 
 def lambda_handler(event, context):
+    USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
+    LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "30"))
+
     # Get features
-    features = get_geonet_features()  # Actual Data. USE THIS
-    # features = get_mock_geonet_features()  # Mock Data. FOR TESTING
+    if USE_MOCK_DATA:
+        features = get_mock_geonet_features()
+    else:
+        features = get_geonet_features(minutes=LOOKBACK_MINUTES)
+
     fifteen_mins_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
 
-    # Filter strictly for unverified CHECKIN items in the single-table layout
+    # Filter strictly for unverified REPORT items in the single-table layout
     response = table.scan(
         FilterExpression=(
-            Attr("entity_type").eq("CHECKIN")
+            Attr("entity_type").eq("REPORT")
             & Attr("verified").eq(False)
             & Attr("timestamp").gte(fifteen_mins_ago)
         )
@@ -175,17 +167,17 @@ def lambda_handler(event, context):
                 # Update verified bool
                 table.update_item(
                     Key={"PK": pk, "SK": sk},
-                    UpdateExpression="SET verified = :v, mmi_value = :m, verified_at = :t",
+                    UpdateExpression="SET verified = :v, mmi_value = :m, verified_at = :t, publicID = :p",
                     ExpressionAttributeValues={
                         ":v": True,
                         ":m": Decimal(str(feat["mmi"])),
                         ":t": datetime.now(timezone.utc).isoformat(),
+                        ":p": feat["publicID"],
                     },
                 )
                 verified_count += 1
                 break
 
-    # DEBUG: REMOVE BELOW
     print(f"# of features with MMI>=4: {len(features)}")
 
     print("Sample output:")
@@ -195,17 +187,8 @@ def lambda_handler(event, context):
         "statusCode": 200,
         "body": json.dumps(
             {
-                "message": "Debug execution done!",
-                "feature_count": len(features),
-                "sample": features[:10],
                 "processed": len(unverified_reports),
                 "verified": verified_count,
             }
         ),
     }
-    # DEBUG END: REMOVE ABOVE
-
-
-if __name__ == "__main__":
-    print(f"Running verifier locally (Local DB: {USE_LOCAL_DB})...")
-    print("Result:", lambda_handler({}, None))
