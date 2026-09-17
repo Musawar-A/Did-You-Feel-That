@@ -132,6 +132,16 @@ def get_mock_geonet_features(minutes=30):
 
 
 def lambda_handler(event, context):
+    """
+    This Lambda Function is triggered every 15 minutes by EventBridge.
+    GeoNet features are obtained through their API. These features are
+    then compared to the reports made by users from the last 30 minutes.
+
+    All reports that are within the area of a verified earthquake (MMI >= 4)
+    are flagged by this Lambda Function. Their report entries' `verified`
+    fields are marked `true` which flags them for notifications by
+    the Notifier Lambda.
+    """
     USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
     LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "30"))
 
