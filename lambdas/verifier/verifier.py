@@ -8,27 +8,14 @@ from decimal import Decimal
 import boto3
 from boto3.dynamodb.conditions import Attr
 
-# Toggle local vs cloud. Change this to False to use AWS DynamoDB
-USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
+LAMBDA_NAME = "DYFT-SeismicVerifier"
+DB_TABLE_NAME = os.getenv("DB_TABLE_NAME", "DYFT-REPORTS")
 
-if USE_LOCAL_DB:
-    dynamodb = boto3.resource(
-        "dynamodb",
-        endpoint_url="http://localhost:8000",
-        region_name="us-east-1",
-        aws_access_key_id="dummy",
-        aws_secret_access_key="dummy",
-    )
-else:
-    # For local-to-cloud testing. Change profile name to whatever you have set up on your device
-    session = boto3.Session(profile_name="dyft-dev", region_name="us-east-1")
-    dynamodb = session.resource("dynamodb")
+# DynamoDB
+dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+table = dynamodb.Table(DB_TABLE_NAME)
 
-table = dynamodb.Table("DYFT-Checkins")
-
-# For Shakes (unverified earthquakes), use intensity type=measured
-# GEONET_MMI_URL = "https://api.geonet.org.nz/intensity?type=measured"
-# For verified earthquakes, use quake with minimum MMi=4
+# For verified earthquakes, use quake with minimum MMI=4
 GEONET_MMI_URL = "https://api.geonet.org.nz/quake?MMI=4"
 
 
@@ -64,17 +51,16 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return distance
 
 
-def get_geonet_features(minutes=7200):
+def get_geonet_features(minutes):
     """
     Obtain features from GeoNet:
     Latitude, Longitude, MMI >= 4, Quality = not deleted
-    For verified earthquakes from the past 30 minutes
+    For verified earthquakes from the past 60 minutes
 
-    Note: For Testing, use 14400 for past 10 days or 7200 for past 5 days, otherwise change to 30
+    Note: For Testing, use 14400 for past 10 days or 7200 for past 5 days, otherwise change to 60.
+    minutes can be changed in the Lambda's Environment Variables
     """
-    req = urllib.request.Request(
-        GEONET_MMI_URL, headers={"User-Agent": "DYFT-SeismicVerifier"}
-    )
+    req = urllib.request.Request(GEONET_MMI_URL, headers={"User-Agent": LAMBDA_NAME})
 
     cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
@@ -127,65 +113,125 @@ def get_geonet_features(minutes=7200):
     return []
 
 
-def get_mock_geonet_features(minutes=30):
+def get_mock_geonet_features(minutes=60):
     """
     FOR TESTING ONLY
     Creates a mock verified earthquake.
     Used to test if verifier works (flipping the verifier bool).
     """
+    # First quake: 30 minutes ago
+    mock_quake1_dt = datetime.now(timezone.utc) - timedelta(minutes=30)
+    mock_quake1_str = mock_quake1_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    # Second quake: 25 minutes after the first quake (5 minutes ago)
+    mock_quake2_dt = mock_quake1_dt + timedelta(minutes=25)
+    mock_quake2_str = mock_quake2_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     return [
         {
             "publicID": "test_quake_001",
-            "lat": -37.787,  # e.g., Hamilton, NZ
+            "lat": -37.787,  # Hamilton, NZ
             "lon": 175.304,
             "mmi": 5,
             "quality": "best",
-            "time": "2026-09-12T07:00:00.000Z",
-        }
+            "time": mock_quake1_str,
+        },
+        {
+            "publicID": "test_quake_002",
+            "lat": -37.800,  # Nearby test coordinates
+            "lon": 175.320,
+            "mmi": 4,
+            "quality": "best",
+            "time": mock_quake2_str,
+        },
     ]
 
 
 def lambda_handler(event, context):
-    # Get features
-    features = get_geonet_features()  # Actual Data. USE THIS
-    # features = get_mock_geonet_features()  # Mock Data. FOR TESTING
-    fifteen_mins_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+    """
+    This Lambda Function is triggered every 15 minutes by EventBridge.
+    GeoNet features are obtained through their API. These features are
+    then compared to the reports made by users from the last 60 minutes.
 
-    # Filter strictly for unverified CHECKIN items in the single-table layout
-    response = table.scan(
-        FilterExpression=(
-            Attr("entity_type").eq("CHECKIN")
+    All reports that are within the area of a verified earthquake (MMI >= 4)
+    and occur within 30 minutes after a confirmed quake are flagged by
+    this Lambda Function. Their report entries' `verified` fields are
+    marked `true` which flags them for notifications by the Notifier Lambda.
+    """
+    USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
+
+    try:
+        LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "60"))
+    except ValueError:
+        LOOKBACK_MINUTES = 60
+
+    # Get features
+    if USE_MOCK_DATA:
+        features = get_mock_geonet_features()
+    else:
+        features = get_geonet_features(minutes=LOOKBACK_MINUTES)
+
+    cutoff_time_dt = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
+    cutoff_time_str = cutoff_time_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    # Filter strictly for unverified REPORT items in the single-table layout
+    scan_kwargs = {
+        "FilterExpression": (
+            Attr("entity_type").eq("REPORT")
             & Attr("verified").eq(False)
-            & Attr("timestamp").gte(fifteen_mins_ago)
+            & Attr("timestamp").gte(cutoff_time_str)
         )
-    )
-    unverified_reports = response.get("Items", [])
+    }
+
+    unverified_reports = []
+
+    while True:
+        response = table.scan(**scan_kwargs)
+        unverified_reports.extend(response.get("Items", []))
+
+        if "LastEvaluatedKey" not in response:
+            break
+        scan_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
     verified_count = 0
 
     # For each unverified report
     for report in unverified_reports:
         u_lat, u_lon = float(report["latitude"]), float(report["longitude"])
-        pk = report["PK"]
-        sk = report["SK"]
+        pk = report["REPORT#"]
+        sk = report["USER#"]
+        report_time = datetime.fromisoformat(report["timestamp"].replace("Z", "+00:00"))
 
         # For each feature
         for feat in features:
+            feat_time = datetime.fromisoformat(feat["time"].replace("Z", "+00:00"))
+
+            # Skip earthquake if it's older than the cutoff time
+            if feat_time < cutoff_time_dt:
+                continue
+
+            # Calculate time difference after the quake report was submitted
+            time_diff = (report_time - feat_time).total_seconds()
+
+            # Skip if report was submitted before the earthquake or more than 30 minutes after it
+            if not (0 <= time_diff <= 1800):
+                continue
+
             # If < 50km (haversine)
             if haversine_km(u_lat, u_lon, feat["lat"], feat["lon"]) <= 50.0:
                 # Update verified bool
                 table.update_item(
-                    Key={"PK": pk, "SK": sk},
-                    UpdateExpression="SET verified = :v, mmi_value = :m, verified_at = :t",
+                    Key={"REPORT#": pk, "USER#": sk},
+                    UpdateExpression="SET verified = :v, mmi_value = :m, verified_at = :t, publicID = :p",
                     ExpressionAttributeValues={
                         ":v": True,
                         ":m": Decimal(str(feat["mmi"])),
                         ":t": datetime.now(timezone.utc).isoformat(),
+                        ":p": feat["publicID"],
                     },
                 )
                 verified_count += 1
                 break
-
-    # DEBUG: REMOVE BELOW
+    print(f"# of unverified reports: {len(unverified_reports)}")
     print(f"# of features with MMI>=4: {len(features)}")
 
     print("Sample output:")
@@ -203,9 +249,3 @@ def lambda_handler(event, context):
             }
         ),
     }
-    # DEBUG END: REMOVE ABOVE
-
-
-if __name__ == "__main__":
-    print(f"Running verifier locally (Local DB: {USE_LOCAL_DB})...")
-    print("Result:", lambda_handler({}, None))
