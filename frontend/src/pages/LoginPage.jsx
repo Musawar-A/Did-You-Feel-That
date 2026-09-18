@@ -1,5 +1,30 @@
 import { useEffect, useState } from "react";
-import { confirmSignUp, getCurrentUser, signIn, signUp } from "aws-amplify/auth";
+import { confirmSignUp, getCurrentUser, signIn, signUp, fetchAuthSession } from "aws-amplify/auth";
+
+
+/**
+ * regsiters the user to DYNAMODB
+ */
+async function registerUser() {
+  try{
+    const session = await fetchAuthSession();
+    const idToken = session.tokens.idToken.toString();
+
+    const response = await fetch(`${import.meta.env.VITE_API_GATEWAY_URL}/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": idToken,
+      },
+    });
+
+    const data = await response.json();
+    console.log("User Registration results", data)
+  }
+  catch (error) {
+    console.error("Error fetching auth session:", error);
+  }
+}
 
 function LoginPage({ onLogin }) {
   // Keeps track of whether we are showing Login or Register.
@@ -16,7 +41,10 @@ function LoginPage({ onLogin }) {
 
   useEffect(() => {
     getCurrentUser()
-      .then(() => onLogin())
+      .then(() => {
+        registerUser();
+        onLogin();
+      })
       .catch(() => {
         // No existing Cognito session; keep showing the login form.
       });
@@ -56,6 +84,7 @@ function LoginPage({ onLogin }) {
       } else {
         const result = await signIn({ username: email, password });
         if (result.isSignedIn) {
+          registerUser(); 
           onLogin();
         } else {
           setError("Additional step required: " + result.nextStep.signInStep);

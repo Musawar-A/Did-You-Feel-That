@@ -1,5 +1,5 @@
 import json
-import os
+# import os
 from datetime import datetime, timezone
 
 import boto3
@@ -7,7 +7,9 @@ from botocore.exceptions import ClientError
 
 # Toggle local vs cloud, same pattern as verifier.py.
 # Change this to False (or set env var USE_LOCAL_DB=false) to use AWS DynamoDB.
-USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
+# USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
+USE_LOCAL_DB = False 
+TABLE_NAME = "DYFT-USERS"
 
 if USE_LOCAL_DB:
     dynamodb = boto3.resource(
@@ -18,15 +20,10 @@ if USE_LOCAL_DB:
         aws_secret_access_key="dummy",
     )
 else:
-    # For local-to-cloud testing. Change profile name to whatever you have set up.
-    session = boto3.Session(profile_name="dyft-dev", region_name="us-east-1")
-    dynamodb = session.resource("dynamodb")
+   dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
 
-#idk if we using just one table for eerything or mutliple?
-TABLE_NAME = os.getenv("USERS_TABLE_NAME", "DYFT-Users")
 table = dynamodb.Table(TABLE_NAME)
-
-
+   
 def _response(status_code, body_dict):
     return {
         "statusCode": status_code,
@@ -37,8 +34,7 @@ def _response(status_code, body_dict):
 def create_user_item(user_id, email, username):
     now = datetime.now(timezone.utc).isoformat()
     item = {
-        "PK": "USER",
-        "SK": user_id,
+        "USER#": f"USER#{user_id}",
         "email": email,
         "username": username,
         "createdAt": now,
@@ -66,7 +62,10 @@ def lambda_handler(event, context):
     try:
         table.put_item(
             Item=item,
-            ConditionExpression="attribute_not_exists(SK)",
+            ConditionExpression="attribute_not_exists(#pk)",
+            ExpressionAttributeNames={
+                "#pk": "USER#"
+            }
         )
         return _response(201, {"message": "User created", "userId": user_id})
     except ClientError as e:
