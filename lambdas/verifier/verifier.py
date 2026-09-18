@@ -9,7 +9,7 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 
 LAMBDA_NAME = "DYFT-SeismicVerifier"
-DB_TABLE_NAME = "DYFT-REPORTS"
+DB_TABLE_NAME = os.getenv("DB_TABLE_NAME", "DYFT-REPORTS")
 
 # DynamoDB
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
@@ -119,6 +119,8 @@ def get_mock_geonet_features(minutes=60):
     Creates a mock verified earthquake.
     Used to test if verifier works (flipping the verifier bool).
     """
+    mock_time_dt = datetime.now(timezone.utc) - timedelta(minutes=30)
+    mock_time_str = mock_time_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     return [
         {
             "publicID": "test_quake_001",
@@ -126,7 +128,7 @@ def get_mock_geonet_features(minutes=60):
             "lon": 175.304,
             "mmi": 5,
             "quality": "best",
-            "time": "2026-09-18T05:50:00.000Z",
+            "time": mock_time_str,
         }
     ]
 
@@ -143,7 +145,11 @@ def lambda_handler(event, context):
     the Notifier Lambda.
     """
     USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
-    LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "60"))
+
+    try:
+        LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "60"))
+    except ValueError:
+        LOOKBACK_MINUTES = 60
 
     # Get features
     if USE_MOCK_DATA:
@@ -151,18 +157,28 @@ def lambda_handler(event, context):
     else:
         features = get_geonet_features(minutes=LOOKBACK_MINUTES)
 
-    fortyfive_mins_ago_dt = datetime.now(timezone.utc) - timedelta(minutes=45)
-    fortyfive_mins_ago = fortyfive_mins_ago_dt.isoformat()
+    cutoff_time_dt = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
+    cutoff_time_str = cutoff_time_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
     # Filter strictly for unverified REPORT items in the single-table layout
-    response = table.scan(
-        FilterExpression=(
+    scan_kwargs = {
+        "FilterExpression": (
             Attr("entity_type").eq("REPORT")
             & Attr("verified").eq(False)
-            & Attr("timestamp").gte(fortyfive_mins_ago)
+            & Attr("timestamp").gte(cutoff_time_str)
         )
-    )
-    unverified_reports = response.get("Items", [])
+    }
+
+    unverified_reports = []
+
+    while True:
+        response = table.scan(**scan_kwargs)
+        unverified_reports.extend(response.get("Items", []))
+
+        if "LastEvaluatedKey" not in response:
+            break
+        scan_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
     verified_count = 0
 
     # For each unverified report
@@ -170,13 +186,23 @@ def lambda_handler(event, context):
         u_lat, u_lon = float(report["latitude"]), float(report["longitude"])
         pk = report["REPORT#"]
         sk = report["USER#"]
+        report_time = datetime.fromisoformat(report["timestamp"].replace("Z", "+00:00"))
 
         # For each feature
         for feat in features:
             feat_time = datetime.fromisoformat(feat["time"].replace("Z", "+00:00"))
-            # Skip earthquake if it's older than 15 minutes
-            if feat_time < fortyfive_mins_ago_dt:
+
+            # Skip earthquake if it's older than the cutoff time
+            if feat_time < cutoff_time_dt:
                 continue
+
+            # Calculate time difference after the quake report was submitted
+            time_diff = (report_time - feat_time).total_seconds()
+
+            # Skip if report was submitted before the earthquake or more than 30 minutes after it
+            if not (0 <= time_diff <= 1800):
+                continue
+
             # If < 50km (haversine)
             if haversine_km(u_lat, u_lon, feat["lat"], feat["lon"]) <= 50.0:
                 # Update verified bool
