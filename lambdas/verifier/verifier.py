@@ -55,9 +55,9 @@ def get_geonet_features(minutes):
     """
     Obtain features from GeoNet:
     Latitude, Longitude, MMI >= 4, Quality = not deleted
-    For verified earthquakes from the past 30 minutes
+    For verified earthquakes from the past 60 minutes
 
-    Note: For Testing, use 14400 for past 10 days or 7200 for past 5 days, otherwise change to 30.
+    Note: For Testing, use 14400 for past 10 days or 7200 for past 5 days, otherwise change to 60.
     minutes can be changed in the Lambda's Environment Variables
     """
     req = urllib.request.Request(GEONET_MMI_URL, headers={"User-Agent": LAMBDA_NAME})
@@ -113,7 +113,7 @@ def get_geonet_features(minutes):
     return []
 
 
-def get_mock_geonet_features(minutes=30):
+def get_mock_geonet_features(minutes=60):
     """
     FOR TESTING ONLY
     Creates a mock verified earthquake.
@@ -126,7 +126,7 @@ def get_mock_geonet_features(minutes=30):
             "lon": 175.304,
             "mmi": 5,
             "quality": "best",
-            "time": "2026-09-12T07:00:00.000Z",
+            "time": "2026-09-18T05:50:00.000Z",
         }
     ]
 
@@ -135,7 +135,7 @@ def lambda_handler(event, context):
     """
     This Lambda Function is triggered every 15 minutes by EventBridge.
     GeoNet features are obtained through their API. These features are
-    then compared to the reports made by users from the last 30 minutes.
+    then compared to the reports made by users from the last 60 minutes.
 
     All reports that are within the area of a verified earthquake (MMI >= 4)
     are flagged by this Lambda Function. Their report entries' `verified`
@@ -143,7 +143,7 @@ def lambda_handler(event, context):
     the Notifier Lambda.
     """
     USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
-    LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "30"))
+    LOOKBACK_MINUTES = int(os.getenv("LOOKBACK_MINUTES", "60"))
 
     # Get features
     if USE_MOCK_DATA:
@@ -151,14 +151,15 @@ def lambda_handler(event, context):
     else:
         features = get_geonet_features(minutes=LOOKBACK_MINUTES)
 
-    fifteen_mins_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+    fortyfive_mins_ago_dt = datetime.now(timezone.utc) - timedelta(minutes=45)
+    fortyfive_mins_ago = fortyfive_mins_ago_dt.isoformat()
 
     # Filter strictly for unverified REPORT items in the single-table layout
     response = table.scan(
         FilterExpression=(
             Attr("entity_type").eq("REPORT")
             & Attr("verified").eq(False)
-            & Attr("timestamp").gte(fifteen_mins_ago)
+            & Attr("timestamp").gte(fortyfive_mins_ago)
         )
     )
     unverified_reports = response.get("Items", [])
@@ -172,11 +173,15 @@ def lambda_handler(event, context):
 
         # For each feature
         for feat in features:
+            feat_time = datetime.fromisoformat(feat["time"].replace("Z", "+00:00"))
+            # Skip earthquake if it's older than 15 minutes
+            if feat_time < fortyfive_mins_ago_dt:
+                continue
             # If < 50km (haversine)
             if haversine_km(u_lat, u_lon, feat["lat"], feat["lon"]) <= 50.0:
                 # Update verified bool
                 table.update_item(
-                    Key={"PK": pk, "SK": sk},
+                    Key={"REPORT#": pk, "USER#": sk},
                     UpdateExpression="SET verified = :v, mmi_value = :m, verified_at = :t, publicID = :p",
                     ExpressionAttributeValues={
                         ":v": True,
@@ -187,11 +192,19 @@ def lambda_handler(event, context):
                 )
                 verified_count += 1
                 break
+    print(f"# of unverified reports: {len(unverified_reports)}")
+    print(f"# of features with MMI>=4: {len(features)}")
+
+    print("Sample output:")
+    print(json.dumps(features[:10], indent=2))
 
     return {
         "statusCode": 200,
         "body": json.dumps(
             {
+                "message": "Debug execution done!",
+                "feature_count": len(features),
+                "sample": features[:10],
                 "processed": len(unverified_reports),
                 "verified": verified_count,
             }
