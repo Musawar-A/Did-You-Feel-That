@@ -9,7 +9,7 @@ import boto3
 from boto3.dynamodb.conditions import Attr
 
 LAMBDA_NAME = "DYFT-SeismicVerifier"
-DB_TABLE_NAME = "DYFT-DataYouFeelThat"
+DB_TABLE_NAME = "DYFT-REPORTS"
 
 # DynamoDB
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")

@@ -45,10 +45,8 @@ def init_db():
     table.put_item(
         Item={
             "PK": "REPORT#rep_hamilton_001",
-            "SK": "REPORT#" + timenow,
+            "SK": "USER#user_test_98",
             "entity_type": "REPORT",
-            "reportID": "rep_test_001",
-            "userID": "user_test_98",
             "timestamp": timenow,
             "latitude": Decimal("-37.7870"),
             "longitude": Decimal("175.3040"),
@@ -60,10 +58,8 @@ def init_db():
     table.put_item(
         Item={
             "PK": "REPORT#rep_tamarunui_002",
-            "SK": "REPORT#2026-09-11T04:30:00Z",
+            "SK": "USER#user_test_99",
             "entity_type": "REPORT",
-            "reportID": "rep_test_002",
-            "userID": "user_test_99",
             "timestamp": timenow,
             "latitude": Decimal("-38.9744"),
             "longitude": Decimal("175.2558"),
