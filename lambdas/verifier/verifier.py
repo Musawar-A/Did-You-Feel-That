@@ -119,17 +119,30 @@ def get_mock_geonet_features(minutes=60):
     Creates a mock verified earthquake.
     Used to test if verifier works (flipping the verifier bool).
     """
-    mock_time_dt = datetime.now(timezone.utc) - timedelta(minutes=30)
-    mock_time_str = mock_time_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    # First quake: 30 minutes ago
+    mock_quake1_dt = datetime.now(timezone.utc) - timedelta(minutes=30)
+    mock_quake1_str = mock_quake1_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    # Second quake: 25 minutes after the first quake (5 minutes ago)
+    mock_quake2_dt = mock_quake1_dt + timedelta(minutes=25)
+    mock_quake2_str = mock_quake2_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     return [
         {
             "publicID": "test_quake_001",
-            "lat": -37.787,  # e.g., Hamilton, NZ
+            "lat": -37.787,  # Hamilton, NZ
             "lon": 175.304,
             "mmi": 5,
             "quality": "best",
-            "time": mock_time_str,
-        }
+            "time": mock_quake1_str,
+        },
+        {
+            "publicID": "test_quake_002",
+            "lat": -37.800,  # Nearby test coordinates
+            "lon": 175.320,
+            "mmi": 4,
+            "quality": "best",
+            "time": mock_quake2_str,
+        },
     ]
 
 
@@ -140,9 +153,9 @@ def lambda_handler(event, context):
     then compared to the reports made by users from the last 60 minutes.
 
     All reports that are within the area of a verified earthquake (MMI >= 4)
-    are flagged by this Lambda Function. Their report entries' `verified`
-    fields are marked `true` which flags them for notifications by
-    the Notifier Lambda.
+    and occur within 30 minutes after a confirmed quake are flagged by
+    this Lambda Function. Their report entries' `verified` fields are
+    marked `true` which flags them for notifications by the Notifier Lambda.
     """
     USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
 
