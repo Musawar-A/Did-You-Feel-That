@@ -167,8 +167,8 @@ def lambda_handler(event, context):
     # For each unverified report
     for report in unverified_reports:
         u_lat, u_lon = float(report["latitude"]), float(report["longitude"])
-        pk = report["PK"]
-        sk = report["SK"]
+        pk = report["REPORT#"]
+        sk = report["USER#"]
 
         # For each feature
         for feat in features:
