@@ -44,25 +44,27 @@ def init_db():
     timenow = datetime.now(timezone.utc).isoformat()
     table.put_item(
         Item={
-            "PK": "CHECKIN#rep_hamilton_001",
-            "SK": "REPORT#" + timenow,
-            "entity_type": "CHECKIN",
+            "PK": "REPORT#rep_hamilton_001",
+            "SK": "USER#user_test_98",
+            "entity_type": "REPORT",
+            "timestamp": timenow,
             "latitude": Decimal("-37.7870"),
             "longitude": Decimal("175.3040"),
-            "timestamp": timenow,
             "verified": False,
+            "notification": "unsent",
         }
     )
     # Add more here. You can add verified GeoNet stuff to test.
     table.put_item(
         Item={
-            "PK": "CHECKIN#rep_tamarunui_002",
-            "SK": "REPORT#2026-09-11T04:30:00Z",
-            "entity_type": "CHECKIN",
+            "PK": "REPORT#rep_tamarunui_002",
+            "SK": "USER#user_test_99",
+            "entity_type": "REPORT",
+            "timestamp": timenow,
             "latitude": Decimal("-38.9744"),
             "longitude": Decimal("175.2558"),
-            "timestamp": timenow,
             "verified": False,
+            "notification": "unsent",
         }
     )
     print("Mock check-in data inserted successfully.")
