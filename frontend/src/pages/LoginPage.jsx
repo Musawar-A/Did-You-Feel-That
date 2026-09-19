@@ -56,8 +56,8 @@ function LoginPage({ onLogin }) {
 
   useEffect(() => {
     getCurrentUser()
-      .then(() => {
-        registerUser();
+      .then(async () => {
+        await registerUser();
         onLogin();
       })
       .catch(() => {
@@ -101,6 +101,20 @@ function LoginPage({ onLogin }) {
     }
   };
 
+  const handleResendCode = async () => {
+    setError("");
+    setMessage("");
+    setIsSubmitting(true);
+    try {
+      await resendSignUpCode({ username });
+      setMessage("A new confirmation code has been sent to your email.");
+    } catch (resendError) {
+      setError(resendError.message || "Couldn't resend confirmation code.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   /**
    * allows unconfirmed user to get a new confirmation code to reset.
    * users can't reset their password until they confirm their account.
@@ -111,7 +125,7 @@ function LoginPage({ onLogin }) {
       setError("Too many attempts. Please try again later.");
       return;
     }
-    
+
     if (resetError.name == "UserNotConfirmedException") {
       try {
         await resendSignUpCode({ username: email });
@@ -162,7 +176,7 @@ function LoginPage({ onLogin }) {
       } else {
         const result = await signIn({ username: email, password });
         if (result.isSignedIn) {
-          registerUser();
+          await registerUser();
           onLogin();
         } else {
           setError("Additional step required: " + result.nextStep.signInStep);
@@ -294,6 +308,13 @@ function LoginPage({ onLogin }) {
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={isSubmitting}
+                className="mt-2 text-sm text-blue-600 hover:underline cursor-pointer">
+                Resend confirmation code
+              </button>
             </div>
           )}
 
