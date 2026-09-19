@@ -27,7 +27,10 @@ table = dynamodb.Table(TABLE_NAME)
 def _response(status_code, body_dict):
     return {
         "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type": "application/json", 
+            "Access-Control-Allow-Origin": "https://didyoufeelthat.devs.surf",
+            },
         "body": json.dumps(body_dict),
     }
 
