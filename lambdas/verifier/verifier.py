@@ -197,8 +197,8 @@ def lambda_handler(event, context):
     # For each unverified report
     for report in unverified_reports:
         u_lat, u_lon = float(report["latitude"]), float(report["longitude"])
-        pk = report["REPORT#"]
-        sk = report["USER#"]
+        pk = report["PK"]
+        sk = report["SK"]
         report_time = datetime.fromisoformat(report["timestamp"].replace("Z", "+00:00"))
 
         # For each feature
@@ -220,7 +220,7 @@ def lambda_handler(event, context):
             if haversine_km(u_lat, u_lon, feat["lat"], feat["lon"]) <= 50.0:
                 # Update verified bool
                 table.update_item(
-                    Key={"REPORT#": pk, "USER#": sk},
+                    Key={"PK": pk, "SK": sk},
                     UpdateExpression="SET verified = :v, mmi_value = :m, verified_at = :t, publicID = :p",
                     ExpressionAttributeValues={
                         ":v": True,
