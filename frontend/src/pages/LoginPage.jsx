@@ -231,7 +231,8 @@ function LoginPage({ onLogin }) {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700 mb-1">
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Email
               </label>
 
@@ -253,7 +254,8 @@ function LoginPage({ onLogin }) {
             <div>
               <label
                 htmlFor="username"
-                className="block text-sm font-medium text-gray-700 mb-1">
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Username
               </label>
               <input
@@ -274,7 +276,8 @@ function LoginPage({ onLogin }) {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-gray-700 mb-1">
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Password
               </label>
 
@@ -302,7 +305,8 @@ function LoginPage({ onLogin }) {
             <div>
               <label
                 htmlFor="confirmationCode"
-                className="block text-sm font-medium text-gray-700 mb-1">
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Confirmation code
               </label>
               <input
@@ -319,7 +323,8 @@ function LoginPage({ onLogin }) {
                 type="button"
                 onClick={handleResendCode}
                 disabled={isSubmitting}
-                className="mt-2 text-sm text-blue-600 hover:underline cursor-pointer">
+                className="mt-2 text-sm text-blue-600 hover:underline cursor-pointer"
+              >
                 Resend confirmation code
               </button>
             </div>
@@ -331,7 +336,8 @@ function LoginPage({ onLogin }) {
               <div>
                 <label
                   htmlFor="resetCode"
-                  className="block text-sm font-medium text-gray-700 mb-1">
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Reset code
                 </label>
                 <input
@@ -347,7 +353,8 @@ function LoginPage({ onLogin }) {
               <div>
                 <label
                   htmlFor="newPassword"
-                  className="block text-sm font-medium text-gray-700 mb-1">
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   New password
                 </label>
                 <input
@@ -375,7 +382,8 @@ function LoginPage({ onLogin }) {
                 type="button"
                 onClick={handleForgotPassword}
                 disabled={isSubmitting}
-                className="text-sm text-blue-600 hover:underline cursor-pointer">
+                className="text-sm text-blue-600 hover:underline cursor-pointer"
+              >
                 Forgot password?
               </button>
             </div>
@@ -387,7 +395,8 @@ function LoginPage({ onLogin }) {
             disabled={isSubmitting}
             className="w-full bg-blue-600 text-white py-3 rounded-lg
                        font-semibold hover:bg-blue-700 transition cursor-pointer
-                       disabled:opacity-50 disabled:cursor-not-allowed">
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {buttonLabel}
           </button>
         </form>
@@ -406,7 +415,8 @@ function LoginPage({ onLogin }) {
             <button
               type="button"
               onClick={resetToLogin}
-              className="text-blue-600 font-semibold hover:underline cursor-pointer">
+              className="text-blue-600 font-semibold hover:underline cursor-pointer"
+            >
               Cancel and go back to login
             </button>
           </div>
@@ -421,7 +431,8 @@ function LoginPage({ onLogin }) {
             <button
               type="button"
               onClick={switchForm}
-              className="ml-2 text-blue-600 font-semibold hover:underline cursor-pointer">
+              className="ml-2 text-blue-600 font-semibold hover:underline cursor-pointer"
+            >
               {isRegistering ? "Login" : "Register"}
             </button>
           </div>

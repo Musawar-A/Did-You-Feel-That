@@ -1,20 +1,62 @@
 import { useEffect, useState } from "react";
+import { fetchAuthSession } from "aws-amplify/auth";
 import MapView from "../components/MapView";
 
+// Sends the user's earthquake report to the API Gateway.
+async function submitReport(latitude, longitude) {
+  // Get the login tokens from the current Cognito session.
+  const { tokens } = await fetchAuthSession();
+
+  const idToken = tokens?.idToken?.toString();
+
+  // Stop here if the user is not logged in.
+  if (!idToken) {
+    throw new Error("User is not authenticated");
+  }
+
+  // Send the report to the backend through API Gateway.
+  const response = await fetch(
+    `${import.meta.env.VITE_API_GATEWAY_URL_REPORTS}/reports`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: idToken,
+      },
+      body: JSON.stringify({
+        latitude,
+        longitude,
+      }),
+    },
+  );
+
+  // Show the backend error if the request was not successful.
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Report submission failed: ${error}`);
+  }
+
+  // Return the response from the backend.
+  return response.json();
+}
+
 function MainPage() {
-  // Stores the user's current location.
+  // Keeps track of the user's current location.
   const [userLocation, setUserLocation] = useState(null);
 
-  // Stores the locations of people who clicked "I FELT THAT".
+  const [isPressed, setIsPressed] = useState(false); //someone clicked the i felt that button or not
+
+  // Keeps the reports that are currently displayed on the map.
   const [feltReports, setFeltReports] = useState([]);
 
   useEffect(() => {
-    // Ask the browser for the user's location.
+    // Ask the browser for permission to access the user's location.
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
 
+        // Save the user's location so the map can show it.
         setUserLocation({
           latitude,
           longitude,
@@ -26,33 +68,46 @@ function MainPage() {
     );
   }, []);
 
-  // Creates a slightly different location for the report
-  // so the user's exact location is not shown.
-  const handleFeltThat = () => {
+  const handleFeltThat = async () => {
+    // The user cannot submit a report until their location is available.
     if (!userLocation) {
       console.log("User location is not available yet.");
       return;
     }
 
-    // Small random offset from the real location.
-    const latitudeOffset = (Math.random() - 0.5) * 0.05;
-    const longitudeOffset = (Math.random() - 0.5) * 0.05;
+    try {
+      // Add a small random offset so the user's exact location
+      // is not sent to the backend or shown as the report location.
+      const latitudeOffset = (Math.random() - 0.5) * 0.05;
+      const longitudeOffset = (Math.random() - 0.5) * 0.05;
 
-    const reportLocation = {
-      latitude: userLocation.latitude + latitudeOffset,
-      longitude: userLocation.longitude + longitudeOffset,
-    };
+      const reportLocation = {
+        latitude: userLocation.latitude + latitudeOffset,
+        longitude: userLocation.longitude + longitudeOffset,
+      };
 
-    // Add the new report to the map.
-    setFeltReports((reports) => [...reports, reportLocation]);
+      // Show the report immediately on the map using the
+      // same offset location that will be sent to the backend.
+      setFeltReports((reports) => [...reports, reportLocation]);
 
-    // TODO: Later this will send the report to the backend.
-    // The backend will save the user ID, location and time.
+      // Send the already-offset coordinates to API Gateway.
+      // The backend should therefore never receive the exact
+      // browser location.
+      const result = await submitReport(
+        reportLocation.latitude,
+        reportLocation.longitude,
+      );
+
+      console.log("Report submitted successfully:", result);
+    } catch (error) {
+      // Keep the error visible in the browser console while testing.
+      console.error("Could not submit earthquake report:", error);
+    }
   };
 
   return (
     <main className="min-h-screen bg-gray-100">
-      {/* Page title and report button */}
+      {/* Shows the page title and lets the user report an earthquake. */}
       <div className="px-6 py-5">
         <h2 className="text-2xl font-semibold text-gray-900">
           Earthquakes Near You
@@ -62,12 +117,16 @@ function MainPage() {
           Click the button if you felt an earthquake.
         </p>
 
-        {/* Lets the user report that they felt an earthquake */}
+        {/* Sends the earthquake report when the user clicks the button. */}
         <button
           onClick={handleFeltThat}
-          className="
+          onPointerDown={() => setIsPressed(true)}
+          onPointerUp={() => setIsPressed(false)}
+          onPointerCancel={() => setIsPressed(false)}
+          onPointerLeave={() => setIsPressed(false)}
+          className={`
             mt-4
-            bg-red-600
+            ${isPressed ? "bg-red-900" : "bg-red-600"}
             hover:bg-red-700
             text-white
             font-semibold
@@ -76,13 +135,14 @@ function MainPage() {
             rounded-md
             text-lg
             cursor-pointer
-          "
+            transition-colors
+          `}
         >
           I FELT THAT
         </button>
       </div>
 
-      {/* Pass the user location and reports to the map */}
+      {/* Gives the map both the user's location and submitted reports. */}
       <div className="h-[600px] w-full">
         <MapView userLocation={userLocation} feltReports={feltReports} />
       </div>
