@@ -19,7 +19,7 @@ async function registerUser() {
     const idToken = session.tokens.idToken.toString();
 
     const response = await fetch(
-      `${import.meta.env.VITE_API_GATEWAY_URL_USERS}/users`,
+      `${import.meta.env.VITE_API_GATEWAY_URL_USERS}`,
       {
         method: "POST",
         headers: {
