@@ -3,7 +3,7 @@
 ## DYFT Team
 
 - **Musawar Ahmad (1629548)** - Group Leader and IAM Role and Policies management
-- **Ernest Divina (1627071)** - Cognito and User management
+- **Ernest Divina (1627071)** - Cognito and User management, Backend: Cognito Lambda, and Frontend: part user login/registration pages with Mohammad
 - **Charles Gerard Serrato (1625871)** - Backend: Verifier Lambda, EventBridge, GeoNet API
 - **Jed Thompson (1709677)** - Backend: Notifier Lambda, SQS, SNS, Backend Ingestion
 - **Mohammad Emon (1640350)** - Frontend: Webapp UI/UX
