@@ -95,11 +95,38 @@ function LoginPage({ onLogin }) {
       setIsResettingPassword(true);
       setMessage("Check your email for the reset code.");
     } catch (resetError) {
-      setError(resetError.message || "Failed to initiate password reset.");
+      await unconfirmedUser(resetError);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  /**
+   * allows unconfirmed user to get a new confirmation code to reset.
+   * users can't reset their password until they confirm their account.
+   * @param {*} resetError
+   */
+  async function unconfirmedUser(resetError) {
+    if (resetError.name == "LimitExceededException") {
+      setError("Too many attempts. Please try again later.");
+      return;
+    }
+    
+    if (resetError.name == "UserNotConfirmedException") {
+      try {
+        await resendSignUpCode({ username: email });
+        setUsername(email);
+        setIsConfirming(true);
+        setMessage(
+          "Your account isn't confirmed yet. We've sent a new code to your email - confirm your account first, then you can reset your password.",
+        );
+      } catch (resendError) {
+        setError(resendError.message || "Couldn't resend confirmation code.");
+      }
+    } else {
+      setError(resetError.message || "Failed to initiate password reset.");
+    }
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -143,22 +170,7 @@ function LoginPage({ onLogin }) {
       }
     } catch (authError) {
       //started registering but never confirmed -> put pack to the confirmation step and resend the code
-      if (authError.name === "UserNotConfirmedException") {
-        try {
-          await resendSignUpCode({ username: email });
-          setUsername(email);
-          setIsConfirming(true);
-          setMessage(
-            "Your account isn't confirmed yet. We've sent a new code to your email.",
-          );
-        } catch (resendError) {
-          setError(resendError.message || "Couldn't resend confirmation code.");
-        }
-      } else if (authError.name === "LimitExceededException") {
-        setError("Too many attempts. Please wait a few minutes and try again.");
-      } else {
-        setError(authError.message || "Authentication failed.");
-      }
+      await unconfirmedUser(authError);
     } finally {
       setIsSubmitting(false);
     }
