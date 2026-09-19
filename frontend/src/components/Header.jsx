@@ -10,7 +10,8 @@ function Header({ isLoggedIn, onSignOut }) {
           <button
             type="button"
             onClick={onSignOut}
-            className="rounded-md bg-stone-600 px-4 py-2 text-sm font-semibold hover:bg-stone-500">
+            className="rounded-md bg-stone-600 px-4 py-2 text-sm font-semibold hover:bg-stone-500 cursor-pointer"
+          >
             Sign out
           </button>
         )}
