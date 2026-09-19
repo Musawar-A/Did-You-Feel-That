@@ -288,6 +288,13 @@ function LoginPage({ onLogin }) {
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
+              {isRegistering && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Must be at least 8 characters, with at least one uppercase
+                  letter, one lowercase letter, one number, and one special
+                  character.
+                </p>
+              )}
             </div>
           )}
 
@@ -352,6 +359,11 @@ function LoginPage({ onLogin }) {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Must be at least 8 characters, with at least one uppercase
+                  letter, one lowercase letter, one number, and one special
+                  character.
+                </p>
               </div>
             </>
           )}
