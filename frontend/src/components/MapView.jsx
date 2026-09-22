@@ -40,7 +40,7 @@ function LocationUpdater({ userLocation }) {
   return null;
 }
 
-function MapView({ userLocation, feltReports = [] }) {
+function MapView({ userLocation, feltReports = [], nearbyReports = [] }) {
   // Auckland is shown until the user's location is available.
   const defaultPosition = [-36.8485, 174.7633];
 
@@ -83,6 +83,25 @@ function MapView({ userLocation, feltReports = [] }) {
             }}
           >
             <Popup>Someone reported feeling an earthquake here.</Popup>
+          </CircleMarker>
+        ))}
+        {/* Show reports returned by the Lambda on the map. */}
+        {nearbyReports.map((report) => (
+          <CircleMarker
+            key={report.reportID}
+            center={[report.latitude, report.longitude]}
+            radius={8}
+            pathOptions={{
+              color: "red",
+              fillColor: "red",
+              fillOpacity: 0.8,
+            }}
+          >
+            <Popup>
+              Someone reported feeling an earthquake here.
+              <br />
+              Distance: {report.distanceKm} km
+            </Popup>
           </CircleMarker>
         ))}
       </MapContainer>

@@ -48,6 +48,9 @@ function MainPage() {
 
   // Keeps the reports that are currently displayed on the map.
   const [feltReports, setFeltReports] = useState([]);
+  //to collect the returned json
+  const [nearbyReports, setNearbyReports] = useState([]);
+  const [nearbyReportCount, setNearbyReportCount] = useState(0);
 
   useEffect(() => {
     // Ask the browser for permission to access the user's location.
@@ -98,7 +101,25 @@ function MainPage() {
         reportLocation.longitude,
       );
 
-      console.log("Report submitted successfully:", result);
+      // Show the complete response returned by Lambda.
+      console.log("========== LAMBDA RESPONSE ==========");
+      console.log("Full response:", result);
+      console.log("Response body:", result.body);
+
+      // Convert the Lambda body from JSON string to JavaScript object.
+      const data = JSON.parse(result.body);
+
+      // Show the individual returned values in the console.
+      console.log("========== PARSED LAMBDA DATA ==========");
+      console.log("Message:", data.message);
+      console.log("Report ID:", data.reportID);
+      console.log("Timestamp:", data.timestamp);
+      console.log("Nearby report count:", data.nearbyReportCount);
+      console.log("Nearby reports:", data.nearbyReports);
+
+      // Store the returned values for the frontend.
+      setNearbyReports(data.nearbyReports || []);
+      setNearbyReportCount(data.nearbyReportCount || 0);
     } catch (error) {
       // Keep the error visible in the browser console while testing.
       console.error("Could not submit earthquake report:", error);
@@ -144,7 +165,26 @@ function MainPage() {
 
       {/* Gives the map both the user's location and submitted reports. */}
       <div className="h-[600px] w-full">
-        <MapView userLocation={userLocation} feltReports={feltReports} />
+        <MapView
+          userLocation={userLocation}
+          feltReports={feltReports}
+          nearbyReports={nearbyReports}
+        />
+        {nearbyReports.length > 0 && (
+          <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1000] bg-white rounded-xl shadow-lg px-5 py-4 min-w-[280px]">
+            <p className="font-semibold text-gray-900 text-center">
+              {nearbyReportCount === 1
+                ? "You are the first person to feel this earthquake."
+                : `${nearbyReportCount - 1} other ${
+                    nearbyReportCount - 1 === 1 ? "person" : "people"
+                  } also felt this earthquake.`}
+            </p>
+
+            <p className="text-sm text-gray-600 text-center mt-1">
+              Reports from the last 30 minutes.
+            </p>
+          </div>
+        )}
       </div>
     </main>
   );
