@@ -101,25 +101,16 @@ function MainPage() {
         reportLocation.longitude,
       );
 
-      // Show the complete response returned by Lambda.
-      console.log("========== LAMBDA RESPONSE ==========");
-      console.log("Full response:", result);
-      console.log("Response body:", result.body);
+      console.log("========== ACTUAL API RESPONSE ==========");
+      console.log("Full result:", result);
+      console.log("Result type:", typeof result);
 
-      // Convert the Lambda body from JSON string to JavaScript object.
-      const data = JSON.parse(result.body);
+      console.log("========== BODY ==========");
+      console.log("Body:", result.body);
+      console.log("Body type:", typeof result.body);
 
-      // Show the individual returned values in the console.
-      console.log("========== PARSED LAMBDA DATA ==========");
-      console.log("Message:", data.message);
-      console.log("Report ID:", data.reportID);
-      console.log("Timestamp:", data.timestamp);
-      console.log("Nearby report count:", data.nearbyReportCount);
-      console.log("Nearby reports:", data.nearbyReports);
-
-      // Store the returned values for the frontend.
-      setNearbyReports(data.nearbyReports || []);
-      setNearbyReportCount(data.nearbyReportCount || 0);
+      console.log("========== RAW RESPONSE JSON ==========");
+      console.log(JSON.stringify(result, null, 2));
     } catch (error) {
       // Keep the error visible in the browser console while testing.
       console.error("Could not submit earthquake report:", error);
