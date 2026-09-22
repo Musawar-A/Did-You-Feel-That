@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 import boto3
 from botocore.exceptions import ClientError
@@ -12,6 +13,14 @@ TABLE_NAME = "DYFT-REPORTS"
 # DynamoDB
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
+
+# Repeated CORS headers for responses
+CORS_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "https://didyoufeelthat.devs.surf",
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+}
 
 # This function is to be triggered when a user clicks the "I Felt That" button
 # Parameters: 
@@ -33,6 +42,7 @@ def lambda_handler(event, context):
     if not user_id:
         return {
             "statusCode": 401,
+            "headers": CORS_HEADERS,
             "body": json.dumps({
                 "message": "Unable to determine authenticated user"
             })
@@ -44,20 +54,35 @@ def lambda_handler(event, context):
     except json.JSONDecodeError:
         return {
             "statusCode": 400,
+            "headers": CORS_HEADERS,
             "body": json.dumps({
                 "message": "Invalid JSON"
             })
         }
 
-    # Should pull the latitude and longitude from the body
+    # Get latitude and longitude from the request
     latitude = body.get("latitude")
     longitude = body.get("longitude")
-    # If either value is empty
+
     if latitude is None or longitude is None:
         return {
             "statusCode": 400,
+            "headers": CORS_HEADERS,
             "body": json.dumps({
                 "message": "latitude and longitude are required"
+            })
+        }
+
+    # Convert to Decimal for DynamoDB
+    try:
+        latitude = Decimal(str(latitude))
+        longitude = Decimal(str(longitude))
+    except (InvalidOperation, ValueError, TypeError):
+        return {
+            "statusCode": 400,
+            "headers": CORS_HEADERS,
+            "body": json.dumps({
+                "message": "latitude and longitude must be valid numbers"
             })
         }
 
@@ -107,6 +132,7 @@ def lambda_handler(event, context):
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return {
                 "statusCode": 409,
+                "headers": CORS_HEADERS,
                 "body": json.dumps({
                     "message": "Report already exists"
                 })
@@ -117,9 +143,7 @@ def lambda_handler(event, context):
     # Request response to return to REACT app
     return {
         "statusCode": 201,
-        "headers": {
-            "Content-Type": "application/json"
-        },
+        "headers": CORS_HEADERS,
         "body": json.dumps({
             "message": "Report created",
             "reportID": report_id,
