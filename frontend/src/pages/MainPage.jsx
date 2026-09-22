@@ -44,12 +44,16 @@ function MainPage() {
   // Keeps track of the user's current location.
   const [userLocation, setUserLocation] = useState(null);
 
-  const [isPressed, setIsPressed] = useState(false); //someone clicked the i felt that button or not
+  // Keeps track of whether the "I FELT THAT" button is being pressed.
+  const [isPressed, setIsPressed] = useState(false);
 
-  // Keeps the reports that are currently displayed on the map.
+  // Keeps the user's own submitted reports displayed on the map.
   const [feltReports, setFeltReports] = useState([]);
-  //to collect the returned json
+
+  // Stores the nearby reports returned by Lambda.
   const [nearbyReports, setNearbyReports] = useState([]);
+
+  // Stores the total number of nearby reports returned by Lambda.
   const [nearbyReportCount, setNearbyReportCount] = useState(0);
 
   useEffect(() => {
@@ -89,13 +93,10 @@ function MainPage() {
         longitude: userLocation.longitude + longitudeOffset,
       };
 
-      // Show the report immediately on the map using the
-      // same offset location that will be sent to the backend.
+      // Show the user's report immediately on the map.
       setFeltReports((reports) => [...reports, reportLocation]);
 
-      // Send the already-offset coordinates to API Gateway.
-      // The backend should therefore never receive the exact
-      // browser location.
+      // Send the offset coordinates to API Gateway.
       const result = await submitReport(
         reportLocation.latitude,
         reportLocation.longitude,
@@ -104,22 +105,26 @@ function MainPage() {
       // Show the complete response returned by Lambda.
       console.log("========== LAMBDA RESPONSE ==========");
       console.log("Full response:", result);
-      console.log("Response body:", result.body);
+      console.log("Response body:", result?.body);
+      console.log("Response body type:", typeof result?.body);
 
-      // Convert the Lambda body from JSON string to JavaScript object.
-      const data = JSON.parse(result.body);
+      // The API may return the data directly or inside result.body.
+      const rawData = result?.body ?? result;
+
+      // Only parse if the returned data is a string.
+      const data = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
 
       // Show the individual returned values in the console.
       console.log("========== PARSED LAMBDA DATA ==========");
-      console.log("Message:", data.message);
-      console.log("Report ID:", data.reportID);
-      console.log("Timestamp:", data.timestamp);
-      console.log("Nearby report count:", data.nearbyReportCount);
-      console.log("Nearby reports:", data.nearbyReports);
+      console.log("Message:", data?.message);
+      console.log("Report ID:", data?.reportID);
+      console.log("Timestamp:", data?.timestamp);
+      console.log("Nearby report count:", data?.nearbyReportCount);
+      console.log("Nearby reports:", data?.nearbyReports);
 
       // Store the returned values for the frontend.
-      setNearbyReports(data.nearbyReports || []);
-      setNearbyReportCount(data.nearbyReportCount || 0);
+      setNearbyReports(data?.nearbyReports || []);
+      setNearbyReportCount(data?.nearbyReportCount || 0);
     } catch (error) {
       // Keep the error visible in the browser console while testing.
       console.error("Could not submit earthquake report:", error);
@@ -128,7 +133,7 @@ function MainPage() {
 
   return (
     <main className="min-h-screen bg-gray-100">
-      {/* Shows the page title and lets the user report an earthquake. */}
+      {/* Page title and earthquake reporting button. */}
       <div className="px-6 py-5">
         <h2 className="text-2xl font-semibold text-gray-900">
           Earthquakes Near You
@@ -163,14 +168,16 @@ function MainPage() {
         </button>
       </div>
 
-      {/* Gives the map both the user's location and submitted reports. */}
-      <div className="h-[600px] w-full">
+      {/* Map and floating nearby-report message. */}
+      <div className="h-[600px] w-full relative">
         <MapView
           userLocation={userLocation}
           feltReports={feltReports}
           nearbyReports={nearbyReports}
         />
-        {nearbyReports.length > 0 && (
+
+        {/* Show the nearby report information after a successful response. */}
+        {nearbyReportCount > 0 && (
           <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1000] bg-white rounded-xl shadow-lg px-5 py-4 min-w-[280px]">
             <p className="font-semibold text-gray-900 text-center">
               {nearbyReportCount === 1
