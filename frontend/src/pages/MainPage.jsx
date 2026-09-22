@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import MapView from "../components/MapView";
 
-// Sends the user's earthquake report to the API Gateway.
+// Sends the user's earthquake report to API Gateway.
 async function submitReport(latitude, longitude) {
   // Get the login token from the current Cognito session.
   const { tokens } = await fetchAuthSession();
@@ -36,43 +36,63 @@ async function submitReport(latitude, longitude) {
     throw new Error(`Report submission failed: ${error}`);
   }
 
-  // Return whatever the backend sends back.
+  // Return the response from the backend.
   return response.json();
+}
+
+// Calculates the approximate distance between two latitude/longitude points.
+// This is used to check whether the user is still in roughly the same location.
+function getDistanceInMetres(lat1, lon1, lat2, lon2) {
+  const earthRadius = 6371000;
+
+  const latDifference = ((lat2 - lat1) * Math.PI) / 180;
+  const lonDifference = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(latDifference / 2) * Math.sin(latDifference / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(lonDifference / 2) *
+      Math.sin(lonDifference / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadius * c;
 }
 
 function MainPage() {
   // Stores the user's current browser location.
   const [userLocation, setUserLocation] = useState(null);
 
-  // Used to give the button a pressed appearance.
+  // Gives the "I FELT THAT" button a pressed appearance.
   const [isPressed, setIsPressed] = useState(false);
 
-  // Stores the user's own report so it can be shown on the map.
+  // Stores the user's own reports displayed on the map.
   const [feltReports, setFeltReports] = useState([]);
 
-  // Stores nearby reports returned by the Lambda function.
+  // Stores nearby reports returned by Lambda.
   const [nearbyReports, setNearbyReports] = useState([]);
 
-  // Stores the number of reports returned by the Lambda function.
+  // Stores the number of nearby reports returned by Lambda.
   const [nearbyReportCount, setNearbyReportCount] = useState(0);
 
-  // Keeps track of whether a report has already been submitted.
-  const [reportSubmitted, setReportSubmitted] = useState(false);
-
-  // Used to stop another click while the first report is still being processed.
+  // Prevents another request while the first request is still processing.
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Controls the message shown when the user tries to report again too soon.
+  // Controls the "already registered" message.
   const [showAlreadyReported, setShowAlreadyReported] = useState(false);
 
+  // Stores the location and time of the user's last successful report.
+  const [lastReport, setLastReport] = useState(null);
+
   useEffect(() => {
-    // Ask the browser for permission to use the user's location.
+    // Ask the browser for permission to access the user's location.
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
 
-        // Save the location so it can be displayed on the map.
+        // Save the actual browser location.
         setUserLocation({
           latitude,
           longitude,
@@ -85,7 +105,13 @@ function MainPage() {
   }, []);
 
   const handleFeltThat = async () => {
-    // If the first request is still being processed, don't send another one.
+    // Make sure the user's location is available first.
+    if (!userLocation) {
+      console.log("User location is not available yet.");
+      return;
+    }
+
+    // Stop a second click while the first report is still being submitted.
     if (isSubmitting) {
       setShowAlreadyReported(true);
 
@@ -96,30 +122,45 @@ function MainPage() {
       return;
     }
 
-    // Prevent the same user from submitting another report
-    // during the 10-minute waiting period.
-    if (reportSubmitted) {
-      setShowAlreadyReported(true);
+    // If the user has submitted a report before, check whether
+    // they are still within the 10-minute restriction.
+    if (lastReport) {
+      const tenMinutes = 10 * 60 * 1000;
 
-      setTimeout(() => {
-        setShowAlreadyReported(false);
-      }, 3000);
+      const timePassed = Date.now() - lastReport.time;
 
-      return;
-    }
+      // Calculate how far the user has moved since their previous report.
+      const distanceFromLastReport = getDistanceInMetres(
+        lastReport.latitude,
+        lastReport.longitude,
+        userLocation.latitude,
+        userLocation.longitude,
+      );
 
-    // The user needs to have a location before submitting a report.
-    if (!userLocation) {
-      console.log("User location is not available yet.");
-      return;
+      // Treat the user as being in the same location if they are
+      // within 100 metres of their previous reporting location.
+      const sameLocation = distanceFromLastReport <= 100;
+
+      // Block another report when the user is in the same area
+      // and the previous report was less than 10 minutes ago.
+      if (sameLocation && timePassed < tenMinutes) {
+        setShowAlreadyReported(true);
+
+        setTimeout(() => {
+          setShowAlreadyReported(false);
+        }, 3000);
+
+        return;
+      }
     }
 
     try {
-      // Lock the submission while the request is being processed.
+      // Lock the button while the report is being processed.
       setIsSubmitting(true);
 
-      // Add a small random offset so the user's exact location
-      // is not sent to the backend.
+      // Add a random offset to protect the user's exact location.
+      // The actual browser location is used only for the 10-minute
+      // same-location check above.
       const latitudeOffset = (Math.random() - 0.5) * 0.05;
       const longitudeOffset = (Math.random() - 0.5) * 0.05;
 
@@ -128,16 +169,16 @@ function MainPage() {
         longitude: userLocation.longitude + longitudeOffset,
       };
 
-      // Show the user's report on the map immediately.
+      // Show the offset report location on the map.
       setFeltReports((reports) => [...reports, reportLocation]);
 
-      // Send the offset location to API Gateway.
+      // Send the offset coordinates to the backend.
       const result = await submitReport(
         reportLocation.latitude,
         reportLocation.longitude,
       );
 
-      // Show the complete response returned by the Lambda.
+      // Display the complete response from Lambda while testing.
       console.log("========== LAMBDA RESPONSE ==========");
       console.log("Full response:", result);
       console.log("Response body:", result?.body);
@@ -146,11 +187,10 @@ function MainPage() {
       // The API may return the data directly or inside result.body.
       const rawData = result?.body ?? result;
 
-      // If the response is a string, convert it into a JavaScript object.
-      // If it is already an object, use it directly.
+      // Convert the response into a JavaScript object if necessary.
       const data = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
 
-      // Display the values returned by the Lambda in the browser console.
+      // Display the returned Lambda values in the browser console.
       console.log("========== PARSED LAMBDA DATA ==========");
       console.log("Message:", data?.message);
       console.log("Report ID:", data?.reportID);
@@ -161,31 +201,30 @@ function MainPage() {
       // Store the nearby reports so they can be displayed on the map.
       setNearbyReports(data?.nearbyReports || []);
 
-      // Store the number of reports returned by the Lambda.
+      // Store the number returned by Lambda.
       setNearbyReportCount(data?.nearbyReportCount || 0);
 
-      // The report was successfully registered.
-      setReportSubmitted(true);
+      // Save the ACTUAL browser location and submission time.
+      // The offset location sent to the backend is not used here.
+      setLastReport({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        time: Date.now(),
+      });
 
-      // Allow the user to submit another report after 10 minutes.
-      setTimeout(
-        () => {
-          setReportSubmitted(false);
-        },
-        10 * 60 * 1000,
-      );
+      console.log("Report successfully registered.");
     } catch (error) {
-      // If something goes wrong, allow the user to try again.
+      // If something fails, allow the user to try again.
       console.error("Could not submit earthquake report:", error);
     } finally {
-      // The first request has finished, so another click can be processed.
+      // The request has finished, so another request can be attempted.
       setIsSubmitting(false);
     }
   };
 
   return (
     <main className="min-h-screen bg-gray-100">
-      {/* Page title and earthquake reporting button. */}
+      {/* Page heading and report button. */}
       <div className="px-6 py-5">
         <h2 className="text-2xl font-semibold text-gray-900">
           Earthquakes Near You
@@ -220,7 +259,7 @@ function MainPage() {
         </button>
       </div>
 
-      {/* Map and floating messages. */}
+      {/* Map and floating information messages. */}
       <div className="h-[600px] w-full relative">
         <MapView
           userLocation={userLocation}
@@ -228,9 +267,9 @@ function MainPage() {
           nearbyReports={nearbyReports}
         />
 
-        {/* Message shown when the user tries to submit another report too soon. */}
+        {/* Tell the user when another report cannot be submitted yet. */}
         {showAlreadyReported && (
-          <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
+          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
               Your report has already been registered.
             </p>
@@ -241,7 +280,7 @@ function MainPage() {
           </div>
         )}
 
-        {/* Shows how many people reported feeling the earthquake. */}
+        {/* Show the number of people who felt the earthquake. */}
         {!showAlreadyReported && nearbyReportCount > 0 && (
           <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
