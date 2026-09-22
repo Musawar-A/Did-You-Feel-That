@@ -242,18 +242,18 @@ function MainPage() {
           onPointerCancel={() => setIsPressed(false)}
           onPointerLeave={() => setIsPressed(false)}
           className={`
-            mt-4
-            ${isPressed ? "bg-red-900" : "bg-red-600"}
-            hover:bg-red-700
-            text-white
-            font-semibold
-            px-10
-            py-4
-            rounded-md
-            text-lg
-            cursor-pointer
-            transition-colors
-          `}
+          mt-4
+          ${isPressed ? "bg-red-900" : "bg-red-600"}
+          hover:bg-red-700
+          text-white
+          font-semibold
+          px-10
+          py-4
+          rounded-md
+          text-lg
+          cursor-pointer
+          transition-colors
+        `}
         >
           I FELT THAT
         </button>
@@ -282,11 +282,11 @@ function MainPage() {
 
         {/* Show the number of people who felt the earthquake. */}
         {!showAlreadyReported && nearbyReportCount > 0 && (
-          <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
+          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
               {nearbyReportCount === 1 ? (
                 <span className="font-semibold text-lg">
-                  You are the first person to feel this earthquake.
+                  You are the first person to feel this Shake.
                 </span>
               ) : (
                 <>
@@ -295,7 +295,7 @@ function MainPage() {
                   </span>
 
                   <span className="text-xl font-bold">
-                    people felt this earthquake
+                    people felt this Shake
                   </span>
                 </>
               )}
@@ -307,6 +307,12 @@ function MainPage() {
           </div>
         )}
       </div>
+
+      {/* Privacy note explaining why report markers are not exact locations. */}
+      <p className="text-sm text-gray-500 text-center px-6 py-3">
+        Locations are shown with an offset and will not represent the actual
+        location of other users' reports.
+      </p>
     </main>
   );
 }
