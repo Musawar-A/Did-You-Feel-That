@@ -178,17 +178,26 @@ function MainPage() {
 
         {/* Show the nearby report information after a successful response. */}
         {nearbyReportCount > 0 && (
-          <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1000] bg-white rounded-xl shadow-lg px-5 py-4 min-w-[280px]">
-            <p className="font-semibold text-gray-900 text-center">
-              {nearbyReportCount === 1
-                ? "You are the first person to feel this earthquake."
-                : `${nearbyReportCount - 1} other ${
-                    nearbyReportCount - 1 === 1 ? "person" : "people"
-                  } also felt this earthquake.`}
+          <div className="absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[300px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
+            <p className="text-center text-gray-900">
+              {nearbyReportCount === 1 ? (
+                <span className="font-semibold text-lg">
+                  You are the first person to feel this earthquake.
+                </span>
+              ) : (
+                <>
+                  <span className="block text-3xl font-extrabold text-red-600">
+                    {nearbyReportCount}
+                  </span>
+                  <span className="block mt-1 text-lg font-bold text-gray-900">
+                    people felt this earthquake
+                  </span>
+                </>
+              )}
             </p>
 
-            <p className="text-sm text-gray-600 text-center mt-1">
-              Reports from the last 30 minutes.
+            <p className="text-sm text-gray-700 text-center mt-2 font-medium">
+              Reports from the last 30 minutes
             </p>
           </div>
         )}
