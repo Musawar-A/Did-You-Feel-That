@@ -291,7 +291,7 @@ function MainPage() {
               ) : (
                 <>
                   <span className="text-4xl font-extrabold text-red-600 mr-2">
-                    {nearbyReportCount + 1}
+                    {nearbyReportCount}
                   </span>
 
                   <span className="text-xl font-bold">
