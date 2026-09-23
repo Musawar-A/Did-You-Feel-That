@@ -33,7 +33,7 @@ def lambda_handler(event, context):
             # Get user from DynamoDB
             response = users_table.get_item(
                 Key={
-                    "user_id": user_id
+                    "USER#": user_id
                 }
             )
 
@@ -54,7 +54,7 @@ def lambda_handler(event, context):
 
             # Send email through SES
             ses.send_email(
-                Source="verified@yourdomain.com",
+                Source="alerts@didyoufeelthat.devs.surf",
 
                 Destination={
                     "ToAddresses": [email]
