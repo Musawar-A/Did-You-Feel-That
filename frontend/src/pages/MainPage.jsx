@@ -85,6 +85,9 @@ function MainPage() {
   // Stores the location and time of the user's last successful report.
   const [lastReport, setLastReport] = useState(null);
 
+  // Tracks whether the user has submitted a report during this page session.
+  const [hasReported, setHasReported] = useState(false);
+
   useEffect(() => {
     // Ask the browser for permission to access the user's location.
     navigator.geolocation.getCurrentPosition(
@@ -203,6 +206,8 @@ function MainPage() {
 
       // Store the number returned by Lambda.
       setNearbyReportCount(data?.nearbyReportCount || 0);
+      // The user has successfully submitted a report.
+      setHasReported(true);
 
       // Save the ACTUAL browser location and submission time.
       // The offset location sent to the backend is not used here.
@@ -281,7 +286,7 @@ function MainPage() {
         )}
 
         {/* Show the number of people who felt the earthquake. */}
-        {!showAlreadyReported && (
+        {hasReported && !showAlreadyReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
               {nearbyReportCount === 0 ? (
