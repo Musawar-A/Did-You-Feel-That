@@ -1,0 +1,1571 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  Did You Feel That (DYFT) infrastructure for COMPX527.
+
+Parameters:
+
+  DeploymentPrefix:
+    Type: String
+    Default: DYFT-AUTO
+    Description: Prefix used for resources created by the automated test deployment.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing VPC used by DYFT.
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: First subnet for the DYFT web server.
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Second subnet for the DYFT web server.
+
+  WebServerAmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-084f35aa8cd582ea7
+    Description: >
+      DYFT web server AMI containing Nginx, Node.js, Git,
+      and the GitHub read-only deploy-key configuration.
+
+  CertificateArn:
+    Type: String
+    Default: arn:aws:iam::987653905868:server-certificate/DYFT-LetsEncrypt-TLS
+    Description: ARN of the existing IAM server certificate used by the ALB.
+
+  OperationsAlertEmail:
+    Type: String
+    Description: Email address subscribed to DYFT CloudWatch operational alerts.
+
+
+Resources:
+
+  # ------------------------------------------------
+  # DynamoDB
+  # ------------------------------------------------
+
+  ReportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${DeploymentPrefix}-REPORTS"
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${DeploymentPrefix}-USERS"
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: "USER#"
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: "USER#"
+          KeyType: HASH
+
+
+  # ------------------------------------------------
+  # SQS
+  # ------------------------------------------------
+
+  NotificationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${DeploymentPrefix}-DidntYouGetThat"
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 3600
+      ReceiveMessageWaitTimeSeconds: 0
+
+
+  NotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${DeploymentPrefix}-DidYouQueueThat"
+
+      VisibilityTimeout: 60
+
+      MessageRetentionPeriod: 345600
+
+      ReceiveMessageWaitTimeSeconds: 20
+
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt NotificationDLQ.Arn
+        maxReceiveCount: 3
+
+
+  # ------------------------------------------------
+  # IAM - Lambda roles
+  # ------------------------------------------------
+
+  ValidationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DeploymentPrefix}-ValidationLambdaRole"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: DYFT-ValidationLambda-DynamoDBWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt ReportsTable.Arn
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource:
+                  - !Sub "${ReportsTable.Arn}/index/GSI1"
+
+
+  VerifierLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DeploymentPrefix}-VerifierLambdaRole"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: DYFT-VerifierLambdaPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt ReportsTable.Arn
+
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource:
+                  - !GetAtt NotificationQueue.Arn
+
+
+  NotifierLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DeploymentPrefix}-NotifierLambdaRole"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: DYFT-NotifierLambdaPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt NotificationQueue.Arn
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                Resource:
+                  - !GetAtt UsersTable.Arn
+
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                Resource: "*"
+
+
+  UserWriteLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DeploymentPrefix}-UserWriteLambdaRole"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: DYFT-UserDynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt UsersTable.Arn
+
+  SchedulerInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DeploymentPrefix}-SeismicVerifierSchedulerRole"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      Policies:
+        - PolicyName: DYFT-SeismicVerifierSchedulerInvoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt VerifierLambda.Arn
+
+
+  # ------------------------------------------------
+  # Lambda functions
+  # ------------------------------------------------
+
+  IngestionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${DeploymentPrefix}-Ingestion"
+
+      Runtime: python3.14
+      Handler: index.lambda_handler
+      Architectures:
+        - x86_64
+
+      MemorySize: 128
+      Timeout: 3
+
+      Role: !GetAtt ValidationLambdaRole.Arn
+      
+      Environment:
+        Variables:
+          REPORTS_TABLE_NAME: !Ref ReportsTable
+
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {
+                  "statusCode": 503,
+                  "body": "Deployment placeholder"
+              }
+
+
+  NotifierLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${DeploymentPrefix}-Notifier"
+
+      Runtime: python3.14
+      Handler: index.lambda_handler
+      Architectures:
+        - x86_64
+
+      MemorySize: 128
+      Timeout: 3
+
+      Role: !GetAtt NotifierLambdaRole.Arn
+
+      Environment:
+        Variables:
+          USERS_TABLE_NAME: !Ref UsersTable
+
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {
+                  "statusCode": 503,
+                  "body": "Deployment placeholder"
+              }
+
+
+  UserLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${DeploymentPrefix}-COGNITO"
+
+      Runtime: python3.14
+      Handler: index.lambda_handler
+      Architectures:
+        - x86_64
+
+      MemorySize: 128
+      Timeout: 3
+
+      Role: !GetAtt UserWriteLambdaRole.Arn
+
+      Environment:
+        Variables:
+          USERS_TABLE_NAME: !Ref UsersTable
+
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {
+                  "statusCode": 503,
+                  "body": "Deployment placeholder"
+              }
+
+
+  VerifierLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${DeploymentPrefix}-SeismicVerifier"
+
+      Runtime: python3.14
+      Handler: index.lambda_handler
+      Architectures:
+        - x86_64
+
+      MemorySize: 128
+      Timeout: 15
+
+      Role: !GetAtt VerifierLambdaRole.Arn
+
+      Environment:
+        Variables:
+          DB_TABLE_NAME: !Ref ReportsTable
+          QUEUE_URL: !Ref NotificationQueue
+          LOOKBACK_MINUTES: "60"
+          USE_MOCK_DATA: "true"
+
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {
+                  "statusCode": 503,
+                  "body": "Deployment placeholder"
+              }
+
+
+  # ------------------------------------------------
+  # SQS to Notifier Lambda
+  # ------------------------------------------------
+
+  NotifierSQSEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt NotificationQueue.Arn
+      FunctionName: !Ref NotifierLambda
+      BatchSize: 10
+      Enabled: true
+
+  # ------------------------------------------------
+  # Cognito
+  # ------------------------------------------------
+
+  DyftUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${DeploymentPrefix}-userpool"
+
+      UsernameConfiguration:
+        CaseSensitive: false
+
+      AliasAttributes:
+        - email
+
+      AutoVerifiedAttributes:
+        - email
+
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+
+      MfaConfiguration: "OFF"
+
+
+  DyftUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${DeploymentPrefix}-appclient"
+      UserPoolId: !Ref DyftUserPool
+
+      GenerateSecret: false
+
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+
+  # ------------------------------------------------
+  # API Gateway - User API
+  # ------------------------------------------------
+
+  UserRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${DeploymentPrefix}-user-api"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+
+  UserApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref UserRestApi
+      ParentId: !GetAtt UserRestApi.RootResourceId
+      PathPart: users
+
+
+  UserApiAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: dyft-cognito-authorizer
+      RestApiId: !Ref UserRestApi
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      ProviderARNs:
+        - !GetAtt DyftUserPool.Arn
+
+
+  UserPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref UserRestApi
+      ResourceId: !Ref UserApiResource
+      HttpMethod: POST
+
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref UserApiAuthorizer
+
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+          - LambdaArn: !GetAtt UserLambda.Arn
+
+
+  UserOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref UserRestApi
+      ResourceId: !Ref UserApiResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+
+      Integration:
+        Type: MOCK
+
+        RequestTemplates:
+          application/json: |
+            {"statusCode": 200}
+
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: >-
+                'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
+              method.response.header.Access-Control-Allow-Methods: >-
+                'OPTIONS,POST'
+              method.response.header.Access-Control-Allow-Origin: >-
+                'https://didyoufeelthat.devs.surf'
+
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+
+  UserLambdaApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UserLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${UserRestApi}/*/POST/users"
+
+
+  UserApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - UserPostMethod
+      - UserOptionsMethod
+    Properties:
+      RestApiId: !Ref UserRestApi
+
+
+  UserApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref UserRestApi
+      DeploymentId: !Ref UserApiDeployment
+      StageName: dyft-dev
+
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 10
+          ThrottlingRateLimit: 5
+
+
+  # ------------------------------------------------
+  # API Gateway - Reports API
+  # ------------------------------------------------
+
+  ReportsRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${DeploymentPrefix}-ReportAPI"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+
+  ReportsApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ReportsRestApi
+      ParentId: !GetAtt ReportsRestApi.RootResourceId
+      PathPart: reports
+
+
+  ReportsApiAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: reportapi-cognito-authorizer
+      RestApiId: !Ref ReportsRestApi
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      ProviderARNs:
+        - !GetAtt DyftUserPool.Arn
+
+
+  ReportsPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ReportsRestApi
+      ResourceId: !Ref ReportsApiResource
+      HttpMethod: POST
+
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ReportsApiAuthorizer
+
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+          - LambdaArn: !GetAtt IngestionLambda.Arn
+
+
+  ReportsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ReportsRestApi
+      ResourceId: !Ref ReportsApiResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+
+      Integration:
+        Type: MOCK
+
+        RequestTemplates:
+          application/json: |
+            {"statusCode": 200}
+
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: >-
+                'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
+              method.response.header.Access-Control-Allow-Methods: >-
+                'OPTIONS,POST'
+              method.response.header.Access-Control-Allow-Origin: >-
+                'https://didyoufeelthat.devs.surf'
+
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+
+  IngestionLambdaApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IngestionLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ReportsRestApi}/*/POST/reports"
+
+
+  ReportsApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ReportsPostMethod
+      - ReportsOptionsMethod
+    Properties:
+      RestApiId: !Ref ReportsRestApi
+
+
+  ReportsApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ReportsRestApi
+      DeploymentId: !Ref ReportsApiDeployment
+      StageName: prod
+
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 10
+          ThrottlingRateLimit: 5
+
+  # ------------------------------------------------
+  # SNS - Operational alerts
+  # ------------------------------------------------
+
+  OperationsAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${DeploymentPrefix}-OperationsAlerts"
+
+
+  OperationsAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref OperationsAlertsTopic
+      Protocol: email
+      Endpoint: !Ref OperationsAlertEmail
+
+
+  # ------------------------------------------------
+  # EventBridge Scheduler
+  # ------------------------------------------------
+
+  SeismicVerifierSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub "${DeploymentPrefix}-SeismicVerifier-15Min"
+
+      Description: >
+        Calls the DYFT-SeismicVerifier Lambda Function every 15 minutes.
+
+      ScheduleExpression: rate(15 minutes)
+
+      ScheduleExpressionTimezone: Pacific/Auckland
+
+      State: ENABLED
+
+      FlexibleTimeWindow:
+        Mode: "OFF"
+
+      Target:
+        Arn: !GetAtt VerifierLambda.Arn
+
+        RoleArn: !GetAtt SchedulerInvokeRole.Arn
+
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 86400
+          MaximumRetryAttempts: 185
+
+  # ------------------------------------------------
+  # Security Groups
+  # ------------------------------------------------
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${DeploymentPrefix}-ALB-SG"
+      GroupDescription: Allow public HTTP/HTTPS traffic to the DYFT ALB.
+      VpcId: !Ref VpcId
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${DeploymentPrefix}-EC2-SG"
+      GroupDescription: Allow web traffic only from the DYFT ALB.
+      VpcId: !Ref VpcId
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+
+  # ------------------------------------------------
+  # EC2 Web Servers
+  # ------------------------------------------------
+
+  WebServer1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref WebServerAmiId
+      InstanceType: t3.micro
+      SubnetId: !Ref PublicSubnet1
+
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-EC2-1"
+
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          cd /home/ec2-user/dyft-compx527
+
+          git fetch origin
+          git checkout main
+          git pull origin main
+
+          cd frontend
+
+          cat > .env <<EOF
+          VITE_COGNITO_USER_POOL_ID=${DyftUserPool}
+          VITE_COGNITO_USER_POOL_CLIENT_ID=${DyftUserPoolClient}
+          VITE_API_GATEWAY_URL_USERS=https://${UserRestApi}.execute-api.${AWS::Region}.amazonaws.com/dyft-dev/users
+          VITE_API_GATEWAY_URL_REPORTS=https://${ReportsRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+          EOF
+
+          npm ci
+          npm run build
+
+          rm -rf /usr/share/nginx/html/*
+          cp -r dist/* /usr/share/nginx/html/
+
+          systemctl enable nginx
+          systemctl restart nginx
+
+
+  WebServer2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref WebServerAmiId
+      InstanceType: t3.micro
+      SubnetId: !Ref PublicSubnet2
+
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-EC2-2"
+
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          cd /home/ec2-user/dyft-compx527
+
+          git fetch origin
+          git checkout main
+          git pull origin main
+
+          cd frontend
+
+          cat > .env <<EOF
+          VITE_COGNITO_USER_POOL_ID=${DyftUserPool}
+          VITE_COGNITO_USER_POOL_CLIENT_ID=${DyftUserPoolClient}
+          VITE_API_GATEWAY_URL_USERS=https://${UserRestApi}.execute-api.${AWS::Region}.amazonaws.com/dyft-dev/users
+          VITE_API_GATEWAY_URL_REPORTS=https://${ReportsRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+          EOF
+
+          npm ci
+          npm run build
+
+          rm -rf /usr/share/nginx/html/*
+          cp -r dist/* /usr/share/nginx/html/
+
+          systemctl enable nginx
+          systemctl restart nginx
+
+
+  # ------------------------------------------------
+  # Target Group
+  # ------------------------------------------------
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${DeploymentPrefix}-EC2-TG"
+
+      VpcId: !Ref VpcId
+
+      Protocol: HTTP
+      Port: 80
+
+      TargetType: instance
+
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 2
+
+      Matcher:
+        HttpCode: "200"
+
+      Targets:
+        - Id: !Ref WebServer1
+          Port: 80
+        - Id: !Ref WebServer2
+          Port: 80
+
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "300"
+
+        - Key: stickiness.enabled
+          Value: "false"
+
+
+  # ------------------------------------------------
+  # Application Load Balancer
+  # ------------------------------------------------
+
+  DyftLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${DeploymentPrefix}-ALB"
+
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: "60"
+
+        - Key: routing.http2.enabled
+          Value: "true"
+
+        - Key: deletion_protection.enabled
+          Value: "false"
+
+
+  # ------------------------------------------------
+  # ALB Listeners
+  # ------------------------------------------------
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref DyftLoadBalancer
+
+      Protocol: HTTP
+      Port: 80
+
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            StatusCode: HTTP_301
+
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref DyftLoadBalancer
+
+      Protocol: HTTPS
+      Port: 443
+
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09
+
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+    # ------------------------------------------------
+  # CloudWatch Dashboard
+  # ------------------------------------------------
+
+  DyftMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${DeploymentPrefix}-Monitoring"
+
+      DashboardBody:
+        Fn::Sub: |
+          {
+            "widgets": [
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 0,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "EC2 CPU Utilization",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "metrics": [
+                    [
+                      "AWS/EC2",
+                      "CPUUtilization",
+                      "InstanceId",
+                      "${WebServer1}"
+                    ],
+                    [
+                      "AWS/EC2",
+                      "CPUUtilization",
+                      "InstanceId",
+                      "${WebServer2}"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 12,
+                "y": 0,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "ALB Target Health",
+                  "region": "${AWS::Region}",
+                  "view": "singleValue",
+                  "period": 60,
+                  "stat": "Average",
+                  "metrics": [
+                    [
+                      "AWS/ApplicationELB",
+                      "HealthyHostCount",
+                      "TargetGroup",
+                      "${WebTargetGroup.TargetGroupFullName}",
+                      "LoadBalancer",
+                      "${DyftLoadBalancer.LoadBalancerFullName}"
+                    ],
+                    [
+                      "AWS/ApplicationELB",
+                      "UnHealthyHostCount",
+                      "TargetGroup",
+                      "${WebTargetGroup.TargetGroupFullName}",
+                      "LoadBalancer",
+                      "${DyftLoadBalancer.LoadBalancerFullName}"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 6,
+                "width": 8,
+                "height": 6,
+                "properties": {
+                  "title": "ALB Requests",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "stat": "Sum",
+                  "metrics": [
+                    [
+                      "AWS/ApplicationELB",
+                      "RequestCount",
+                      "TargetGroup",
+                      "${WebTargetGroup.TargetGroupFullName}",
+                      "LoadBalancer",
+                      "${DyftLoadBalancer.LoadBalancerFullName}"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 8,
+                "y": 6,
+                "width": 8,
+                "height": 6,
+                "properties": {
+                  "title": "ALB Target Response Time",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "metrics": [
+                    [
+                      "AWS/ApplicationELB",
+                      "TargetResponseTime",
+                      "TargetGroup",
+                      "${WebTargetGroup.TargetGroupFullName}",
+                      "LoadBalancer",
+                      "${DyftLoadBalancer.LoadBalancerFullName}"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 16,
+                "y": 6,
+                "width": 8,
+                "height": 6,
+                "properties": {
+                  "title": "ALB Target Connection Errors",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "stat": "Sum",
+                  "metrics": [
+                    [
+                      "AWS/ApplicationELB",
+                      "TargetConnectionErrorCount",
+                      "TargetGroup",
+                      "${WebTargetGroup.TargetGroupFullName}",
+                      "LoadBalancer",
+                      "${DyftLoadBalancer.LoadBalancerFullName}"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 12,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "API Gateway Requests",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "stat": "Sum",
+                  "metrics": [
+                    [
+                      "AWS/ApiGateway",
+                      "Count",
+                      "ApiName",
+                      "${DeploymentPrefix}-user-api"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 12,
+                "y": 12,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "API Gateway 5XX Errors",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "stat": "Sum",
+                  "metrics": [
+                    [
+                      "AWS/ApiGateway",
+                      "5XXError",
+                      "ApiName",
+                      "${DeploymentPrefix}-user-api"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 18,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "Lambda Invocations",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "stat": "Sum",
+                  "metrics": [
+                    [
+                      "AWS/Lambda",
+                      "Invocations",
+                      "FunctionName",
+                      "${VerifierLambda}"
+                    ],
+                    [
+                      "AWS/Lambda",
+                      "Invocations",
+                      "FunctionName",
+                      "${UserLambda}"
+                    ],
+                    [
+                      "AWS/Lambda",
+                      "Invocations",
+                      "FunctionName",
+                      "${IngestionLambda}"
+                    ],
+                    [
+                      "AWS/Lambda",
+                      "Invocations",
+                      "FunctionName",
+                      "${NotifierLambda}"
+                    ]
+                  ]
+                }
+              },
+
+              {
+                "type": "metric",
+                "x": 12,
+                "y": 18,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "title": "Lambda Errors",
+                  "region": "${AWS::Region}",
+                  "view": "timeSeries",
+                  "period": 300,
+                  "stat": "Sum",
+                  "metrics": [
+                    [
+                      "AWS/Lambda",
+                      "Errors",
+                      "FunctionName",
+                      "${VerifierLambda}"
+                    ],
+                    [
+                      "AWS/Lambda",
+                      "Errors",
+                      "FunctionName",
+                      "${UserLambda}"
+                    ],
+                    [
+                      "AWS/Lambda",
+                      "Errors",
+                      "FunctionName",
+                      "${IngestionLambda}"
+                    ],
+                    [
+                      "AWS/Lambda",
+                      "Errors",
+                      "FunctionName",
+                      "${NotifierLambda}"
+                    ]
+                  ]
+                }
+              }
+            ]
+          }
+
+
+  # ------------------------------------------------
+  # CloudWatch Alarms - EC2
+  # ------------------------------------------------
+
+  WebServer1HighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-EC2-HighCPU"
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref WebServer1
+
+      Statistic: Average
+      Period: 300
+
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+
+  WebServer1StatusCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-EC2-StatusCheckFailed"
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed
+
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref WebServer1
+
+      Statistic: Maximum
+      Period: 300
+
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+
+  WebServer2HighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-EC2-2-HighCPU"
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref WebServer2
+
+      Statistic: Average
+      Period: 300
+
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+
+  WebServer2StatusCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-EC2-2-StatusCheckFailed"
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed
+
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref WebServer2
+
+      Statistic: Maximum
+      Period: 300
+
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+
+  # ------------------------------------------------
+  # CloudWatch Alarms - ALB
+  # ------------------------------------------------
+
+  AlbUnhealthyTargetsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-ALB-UnhealthyTargets"
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt WebTargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !GetAtt DyftLoadBalancer.LoadBalancerFullName
+
+      Statistic: Maximum
+      Period: 300
+
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+
+  AlbTargetConnectionErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-ALB-TargetConnectionErrors"
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetConnectionErrorCount
+
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt WebTargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !GetAtt DyftLoadBalancer.LoadBalancerFullName
+
+      Statistic: Sum
+      Period: 300
+
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+
+  # ------------------------------------------------
+  # CloudWatch Alarm - API Gateway
+  # ------------------------------------------------
+
+  UserApi5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-API-5XXErrors"
+      Namespace: AWS/ApiGateway
+      MetricName: 5XXError
+
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub "${DeploymentPrefix}-user-api"
+
+      Statistic: Sum
+      Period: 300
+
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+
+  # ------------------------------------------------
+  # CloudWatch Alarm - Verifier Lambda
+  # ------------------------------------------------
+
+  VerifierLambdaErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${DeploymentPrefix}-VerifierLambda-Errors"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref VerifierLambda
+
+      Statistic: Sum
+      Period: 300
+
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+
+      TreatMissingData: missing
+
+      AlarmActions:
+        - !Ref OperationsAlertsTopic
+
+# ------------------------------------------------
+# Outputs
+# ------------------------------------------------
+
+Outputs:
+
+  LoadBalancerDNS:
+    Description: DNS name of the DYFT Application Load Balancer.
+    Value: !GetAtt DyftLoadBalancer.DNSName
+
+
+  UserApiUrl:
+    Description: DYFT user API endpoint.
+    Value: !Sub >
+      https://${UserRestApi}.execute-api.${AWS::Region}.amazonaws.com/dyft-dev/users
+
+
+  ReportsApiUrl:
+    Description: DYFT reports API stage endpoint.
+    Value: !Sub >
+      https://${ReportsRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID.
+    Value: !Ref DyftUserPool
+
+
+  CognitoAppClientId:
+    Description: Cognito App Client ID.
+    Value: !Ref DyftUserPoolClient
+
+
+  NotificationQueueUrl:
+    Description: Main DYFT SQS notification queue URL.
+    Value: !Ref NotificationQueue
+
+
+  NotificationQueueArn:
+    Description: Main DYFT SQS notification queue ARN.
+    Value: !GetAtt NotificationQueue.Arn
+
+
+  OperationsAlertsTopicArn:
+    Description: SNS topic used for operational CloudWatch alerts.
+    Value: !Ref OperationsAlertsTopic
+
+
+  WebServer1InstanceId:
+    Description: First DYFT EC2 instance.
+    Value: !Ref WebServer1
+
+
+  WebServer2InstanceId:
+    Description: Second DYFT EC2 instance.
+    Value: !Ref WebServer2
