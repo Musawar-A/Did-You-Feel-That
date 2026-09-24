@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 # Change this to False (or set env var USE_LOCAL_DB=false) to use AWS DynamoDB.
 # USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
 USE_LOCAL_DB = False 
-TABLE_NAME = "DYFT-USERS"
+TABLE_NAME = os.getenv("USERS_TABLE_NAME", "DYFT-USERS")
 
 if USE_LOCAL_DB:
     dynamodb = boto3.resource(
