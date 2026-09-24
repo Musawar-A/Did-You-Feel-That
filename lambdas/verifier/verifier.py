@@ -20,7 +20,10 @@ GEONET_MMI_URL = "https://api.geonet.org.nz/quake?MMI=4"
 
 sqs = boto3.client("sqs")
 
-QUEUE_URL = "https://sqs.us-east-1.amazonaws.com/987653905868/DYFT-DidYouQueueThat"
+QUEUE_URL = os.getenv(
+    "QUEUE_URL",
+    "https://sqs.us-east-1.amazonaws.com/987653905868/DYFT-DidYouQueueThat"
+)
 
 
 def haversine_km(lat1, lon1, lat2, lon2):

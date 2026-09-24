@@ -7,7 +7,7 @@ LAMBDA_NAME = "DYFT-Notifier"
 
 dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
 
-users_table = dynamodb.Table("DYFT-USERS")
+users_table = dynamodb.Table(os.getenv("USERS_TABLE_NAME", "DYFT-USERS"))
 
 ses = boto3.client(
     "ses",
