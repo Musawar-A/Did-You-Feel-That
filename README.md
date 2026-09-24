@@ -52,6 +52,22 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 - **Python Libraries**: `boto3`, `urllib3`
 
+
+- AWS CLI installed
+- an existing VPC with two public subnets
+- the project TLS certificate
+- An EC2 AMI containing Nginx, Node.js, npm, Git, and read-only access to the project repository. The provided deployment script uses the project AMI in the group AWS account; deployments in another AWS account must provide an equivalent AMI.
+
+
+
+
+The deployment is configured for:
+
+```text
+Region: us-east-1
+```
+
+
 ### Environment Variables
 
 - `DB_TABLE_NAME`: The name of the REPORTS Dynamo DB table. Default is `DYFT-REPORTS`.
@@ -98,3 +114,33 @@ Stores user profile information and contact details for notifications.
   - `email` (String): User email address for receiving verification alerts.
   - `name` (String): User display name.
   - `created_at` (String): ISO-8601 UTC timestamp of account creation.
+
+## Deploy the application
+
+From the repository root, make the deployment script executable:
+
+```bash
+chmod +x deploy.sh
+```
+
+Then deploy:
+
+```bash
+./deploy.sh
+```
+#### Get application URLs and IDs
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name dyft-auto-compx527 \
+  --region us-east-1 \
+  --query "Stacks[0].Outputs" \
+  --output table
+```
+Use the output value for LoadBalancerDNS to access the project.
+
+### Remove the automated deployment
+
+```bash
+aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1
+```
