@@ -18,8 +18,6 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 ## AWS Architecture
 
-\<insert architecture image here\>
-
 - **Amazon Application Load Balancer**: Distributes incoming application traffic across Amazon EC2 instances to maintain the app's availability and stability.
 
 - **Amazon EC2**: Hosts the web application server; serves user interfaces and frontend traffic management.
