@@ -1,5 +1,5 @@
 import json
-# import os
+import os
 from datetime import datetime, timezone
 
 import boto3
@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 # USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
 USE_LOCAL_DB = False 
 TABLE_NAME = os.getenv("USERS_TABLE_NAME", "DYFT-USERS")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "https://didyoufeelthat.devs.surf")
 
 if USE_LOCAL_DB:
     dynamodb = boto3.resource(
@@ -20,7 +21,7 @@ if USE_LOCAL_DB:
         aws_secret_access_key="dummy",
     )
 else:
-   dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+   dynamodb = boto3.resource("dynamodb")
 
 table = dynamodb.Table(TABLE_NAME)
    
@@ -29,7 +30,7 @@ def _response(status_code, body_dict):
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json", 
-            "Access-Control-Allow-Origin": "https://didyoufeelthat.devs.surf",
+            "Access-Control-Allow-Origin": FRONTEND_ORIGIN,
             },
         "body": json.dumps(body_dict),
     }

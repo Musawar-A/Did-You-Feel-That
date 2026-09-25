@@ -44,35 +44,76 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 ## Deployment Instructions
 
-### Prerequisites \& Dependencies
+Deploy from a cloned repository with AWS CLI credentials for the target account.
 
-- **Runtimes**: Python 3.12, Node.js 18+
+### Prerequisites
 
-- **AWS Resources**: AWS CLI configured with appropriate IAM permissions
+- AWS CLI authenticated in the user's AWS account.
+- Permission to create the project resources and named IAM roles.
+- Bash and `zip`.
+- Deployment region is fixed to `us-east-1`.
+- TLS is optional. Set `CERTIFICATE_ARN` for HTTPS; omit it for HTTP-only.
+- SES is only needed for email notification testing. Set `SES_SENDER_EMAIL` to a verified SES sender.
 
-- **Python Libraries**: `boto3`, `urllib3`
+### AWS CLI Authentication
 
-
-- AWS CLI installed
-- an existing VPC with two public subnets
-- the project TLS certificate
-- An EC2 AMI containing Nginx, Node.js, npm, Git, and read-only access to the project repository. The provided deployment script uses the project AMI in the group AWS account; deployments in another AWS account must provide an equivalent AMI.
-
-
-
-
-The deployment is configured for:
-
-```text
-Region: us-east-1
+```bash
+aws configure
+aws sts get-caller-identity
 ```
 
+### Deploy
 
-### Environment Variables
+From the repository root:
 
-- `DB_TABLE_NAME`: The name of the REPORTS Dynamo DB table. Default is `DYFT-REPORTS`.
-- `LOOKBACK_MINUTES`: Lookback window for fetching quakes and scanning reports. Default is `60`.
-- `USE_MOCK_DATA`: Debug toggle. Forces Lambda to use local test data instead of live GeoNet API. Default is `false`.
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+HTTP-only mode works without a certificate. Browser geolocation may not work over HTTP.
+
+For HTTPS:
+
+```bash
+CERTIFICATE_ARN="arn:aws:acm:us-east-1:123456789012:certificate/example" \
+FRONTEND_ORIGIN="https://example.com" \
+OPERATIONS_ALERT_EMAIL="alerts@example.com" \
+SES_SENDER_EMAIL="alerts@example.com" \
+./deploy.sh
+```
+
+Only `CERTIFICATE_ARN` is needed for HTTPS. Set only the optional values you need. Omit `FRONTEND_ORIGIN` when using the ALB DNS name.
+
+Optional variables:
+
+- `CERTIFICATE_ARN`: Enables HTTPS. Omit for HTTP-only.
+- `FRONTEND_ORIGIN`: CORS origin. Set this when using a custom domain.
+- `OPERATIONS_ALERT_EMAIL`: Optional CloudWatch alarm email. Confirm the SNS email.
+- `SES_SENDER_EMAIL`: Optional verified SES sender.
+
+### Get Outputs
+
+`deploy.sh` prints outputs. To fetch them later:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name dyft-auto-compx527 \
+  --region us-east-1 \
+  --query "Stacks[0].Outputs" \
+  --output table
+```
+
+Use `LoadBalancerDNS` to open the app. Use `http://<LoadBalancerDNS>` without TLS.
+
+
+## Remove the automated deployment
+
+Delete the stack after testing to stop ongoing AWS charges:
+
+```bash
+aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1
+```
 
 ---
 
@@ -114,33 +155,3 @@ Stores user profile information and contact details for notifications.
   - `email` (String): User email address for receiving verification alerts.
   - `name` (String): User display name.
   - `created_at` (String): ISO-8601 UTC timestamp of account creation.
-
-## Deploy the application
-
-From the repository root, make the deployment script executable:
-
-```bash
-chmod +x deploy.sh
-```
-
-Then deploy:
-
-```bash
-./deploy.sh
-```
-#### Get application URLs and IDs
-
-```bash
-aws cloudformation describe-stacks \
-  --stack-name dyft-auto-compx527 \
-  --region us-east-1 \
-  --query "Stacks[0].Outputs" \
-  --output table
-```
-Use the output value for LoadBalancerDNS to access the project.
-
-### Remove the automated deployment
-
-```bash
-aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1
-```

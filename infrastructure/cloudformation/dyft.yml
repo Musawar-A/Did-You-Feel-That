@@ -10,36 +10,138 @@ Parameters:
     Default: DYFT-AUTO
     Description: Prefix used for resources created by the automated test deployment.
 
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: Existing VPC used by DYFT.
-
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet::Id
-    Description: First subnet for the DYFT web server.
-
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet::Id
-    Description: Second subnet for the DYFT web server.
-
   WebServerAmiId:
-    Type: AWS::EC2::Image::Id
-    Default: ami-084f35aa8cd582ea7
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: >
-      DYFT web server AMI containing Nginx, Node.js, Git,
-      and the GitHub read-only deploy-key configuration.
+      Public SSM parameter for the latest Amazon Linux 2023 x86_64 AMI.
+
+  RepositoryUrl:
+    Type: String
+    Default: https://github.com/Musawar-A/dyft-compx527.git
+    Description: Public Git repository cloned by EC2 web servers.
+
+  RepositoryBranch:
+    Type: String
+    Default: main
+    Description: Git branch checked out by EC2 web servers.
 
   CertificateArn:
     Type: String
-    Default: arn:aws:iam::987653905868:server-certificate/DYFT-LetsEncrypt-TLS
-    Description: ARN of the existing IAM server certificate used by the ALB.
+    Default: ""
+    NoEcho: true
+    Description: Optional ARN of an existing ACM or IAM TLS certificate used by the ALB HTTPS listener.
+
+  FrontendOrigin:
+    Type: String
+    Default: ""
+    Description: Optional allowed frontend origin for API Gateway and Lambda CORS responses.
 
   OperationsAlertEmail:
     Type: String
-    Description: Email address subscribed to DYFT CloudWatch operational alerts.
+    Default: ""
+    Description: Optional email address subscribed to DYFT CloudWatch operational alerts.
+
+  SesSenderEmail:
+    Type: String
+    Default: ""
+    Description: Optional SES-verified sender email address used by the notifier Lambda.
+
+
+Conditions:
+
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
+  NoCertificate: !Not [!Condition HasCertificate]
+  HasFrontendOrigin: !Not [!Equals [!Ref FrontendOrigin, ""]]
+  HasOperationsAlertEmail: !Not [!Equals [!Ref OperationsAlertEmail, ""]]
 
 
 Resources:
+
+  # ------------------------------------------------
+  # Networking
+  # ------------------------------------------------
+
+  DyftVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.52.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-VPC"
+
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-IGW"
+
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref DyftVpc
+
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref DyftVpc
+      CidrBlock: 10.52.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-PublicSubnet1"
+
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref DyftVpc
+      CidrBlock: 10.52.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-PublicSubnet2"
+
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref DyftVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-PublicRoutes"
+
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
 
   # ------------------------------------------------
   # DynamoDB
@@ -325,6 +427,13 @@ Resources:
       Environment:
         Variables:
           REPORTS_TABLE_NAME: !Ref ReportsTable
+          FRONTEND_ORIGIN: !If
+            - HasFrontendOrigin
+            - !Ref FrontendOrigin
+            - !If
+              - HasCertificate
+              - !Sub "https://${DyftLoadBalancer.DNSName}"
+              - !Sub "http://${DyftLoadBalancer.DNSName}"
 
       Code:
         ZipFile: |
@@ -353,6 +462,7 @@ Resources:
       Environment:
         Variables:
           USERS_TABLE_NAME: !Ref UsersTable
+          SES_SENDER_EMAIL: !Ref SesSenderEmail
 
       Code:
         ZipFile: |
@@ -381,6 +491,13 @@ Resources:
       Environment:
         Variables:
           USERS_TABLE_NAME: !Ref UsersTable
+          FRONTEND_ORIGIN: !If
+            - HasFrontendOrigin
+            - !Ref FrontendOrigin
+            - !If
+              - HasCertificate
+              - !Sub "https://${DyftLoadBalancer.DNSName}"
+              - !Sub "http://${DyftLoadBalancer.DNSName}"
 
       Code:
         ZipFile: |
@@ -555,8 +672,13 @@ Resources:
                 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
               method.response.header.Access-Control-Allow-Methods: >-
                 'OPTIONS,POST'
-              method.response.header.Access-Control-Allow-Origin: >-
-                'https://didyoufeelthat.devs.surf'
+              method.response.header.Access-Control-Allow-Origin: !If
+                - HasFrontendOrigin
+                - !Sub "'${FrontendOrigin}'"
+                - !If
+                  - HasCertificate
+                  - !Sub "'https://${DyftLoadBalancer.DNSName}'"
+                  - !Sub "'http://${DyftLoadBalancer.DNSName}'"
 
       MethodResponses:
         - StatusCode: 200
@@ -670,8 +792,13 @@ Resources:
                 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
               method.response.header.Access-Control-Allow-Methods: >-
                 'OPTIONS,POST'
-              method.response.header.Access-Control-Allow-Origin: >-
-                'https://didyoufeelthat.devs.surf'
+              method.response.header.Access-Control-Allow-Origin: !If
+                - HasFrontendOrigin
+                - !Sub "'${FrontendOrigin}'"
+                - !If
+                  - HasCertificate
+                  - !Sub "'https://${DyftLoadBalancer.DNSName}'"
+                  - !Sub "'http://${DyftLoadBalancer.DNSName}'"
 
       MethodResponses:
         - StatusCode: 200
@@ -724,6 +851,7 @@ Resources:
 
   OperationsAlertsEmailSubscription:
     Type: AWS::SNS::Subscription
+    Condition: HasOperationsAlertEmail
     Properties:
       TopicArn: !Ref OperationsAlertsTopic
       Protocol: email
@@ -769,7 +897,7 @@ Resources:
     Properties:
       GroupName: !Sub "${DeploymentPrefix}-ALB-SG"
       GroupDescription: Allow public HTTP/HTTPS traffic to the DYFT ALB.
-      VpcId: !Ref VpcId
+      VpcId: !Ref DyftVpc
 
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -792,7 +920,7 @@ Resources:
     Properties:
       GroupName: !Sub "${DeploymentPrefix}-EC2-SG"
       GroupDescription: Allow web traffic only from the DYFT ALB.
-      VpcId: !Ref VpcId
+      VpcId: !Ref DyftVpc
 
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -811,6 +939,9 @@ Resources:
 
   WebServer1:
     Type: AWS::EC2::Instance
+    DependsOn:
+      - PublicDefaultRoute
+      - PublicSubnet1RouteTableAssociation
     Properties:
       ImageId: !Ref WebServerAmiId
       InstanceType: t3.micro
@@ -826,15 +957,19 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          set -e
+          set -euxo pipefail
 
-          cd /home/ec2-user/dyft-compx527
+          dnf update -y
+          dnf install -y git nginx curl
 
-          git fetch origin
-          git checkout main
-          git pull origin main
+          curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+          dnf install -y nodejs
 
-          cd frontend
+          rm -rf /home/ec2-user/dyft-compx527
+          git clone --branch ${RepositoryBranch} --single-branch ${RepositoryUrl} /home/ec2-user/dyft-compx527
+          chown -R ec2-user:ec2-user /home/ec2-user/dyft-compx527
+
+          cd /home/ec2-user/dyft-compx527/frontend
 
           cat > .env <<EOF
           VITE_COGNITO_USER_POOL_ID=${DyftUserPool}
@@ -842,12 +977,16 @@ Resources:
           VITE_API_GATEWAY_URL_USERS=https://${UserRestApi}.execute-api.${AWS::Region}.amazonaws.com/dyft-dev/users
           VITE_API_GATEWAY_URL_REPORTS=https://${ReportsRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod
           EOF
+          chown ec2-user:ec2-user .env
 
-          npm ci
-          npm run build
+          sudo -u ec2-user npm ci
+          sudo -u ec2-user npm run build
 
           rm -rf /usr/share/nginx/html/*
           cp -r dist/* /usr/share/nginx/html/
+          chown -R nginx:nginx /usr/share/nginx/html
+          find /usr/share/nginx/html -type d -exec chmod 755 {} \;
+          find /usr/share/nginx/html -type f -exec chmod 644 {} \;
 
           systemctl enable nginx
           systemctl restart nginx
@@ -855,6 +994,9 @@ Resources:
 
   WebServer2:
     Type: AWS::EC2::Instance
+    DependsOn:
+      - PublicDefaultRoute
+      - PublicSubnet2RouteTableAssociation
     Properties:
       ImageId: !Ref WebServerAmiId
       InstanceType: t3.micro
@@ -870,15 +1012,19 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          set -e
+          set -euxo pipefail
 
-          cd /home/ec2-user/dyft-compx527
+          dnf update -y
+          dnf install -y git nginx curl
 
-          git fetch origin
-          git checkout main
-          git pull origin main
+          curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+          dnf install -y nodejs
 
-          cd frontend
+          rm -rf /home/ec2-user/dyft-compx527
+          git clone --branch ${RepositoryBranch} --single-branch ${RepositoryUrl} /home/ec2-user/dyft-compx527
+          chown -R ec2-user:ec2-user /home/ec2-user/dyft-compx527
+
+          cd /home/ec2-user/dyft-compx527/frontend
 
           cat > .env <<EOF
           VITE_COGNITO_USER_POOL_ID=${DyftUserPool}
@@ -886,12 +1032,16 @@ Resources:
           VITE_API_GATEWAY_URL_USERS=https://${UserRestApi}.execute-api.${AWS::Region}.amazonaws.com/dyft-dev/users
           VITE_API_GATEWAY_URL_REPORTS=https://${ReportsRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod
           EOF
+          chown ec2-user:ec2-user .env
 
-          npm ci
-          npm run build
+          sudo -u ec2-user npm ci
+          sudo -u ec2-user npm run build
 
           rm -rf /usr/share/nginx/html/*
           cp -r dist/* /usr/share/nginx/html/
+          chown -R nginx:nginx /usr/share/nginx/html
+          find /usr/share/nginx/html -type d -exec chmod 755 {} \;
+          find /usr/share/nginx/html -type f -exec chmod 644 {} \;
 
           systemctl enable nginx
           systemctl restart nginx
@@ -906,7 +1056,7 @@ Resources:
     Properties:
       Name: !Sub "${DeploymentPrefix}-EC2-TG"
 
-      VpcId: !Ref VpcId
+      VpcId: !Ref DyftVpc
 
       Protocol: HTTP
       Port: 80
@@ -974,8 +1124,9 @@ Resources:
   # ALB Listeners
   # ------------------------------------------------
 
-  HttpListener:
+  HttpRedirectListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
     Properties:
       LoadBalancerArn: !Ref DyftLoadBalancer
 
@@ -990,8 +1141,23 @@ Resources:
             StatusCode: HTTP_301
 
 
+  HttpForwardListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: NoCertificate
+    Properties:
+      LoadBalancerArn: !Ref DyftLoadBalancer
+
+      Protocol: HTTP
+      Port: 80
+
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+
   HttpsListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
     Properties:
       LoadBalancerArn: !Ref DyftLoadBalancer
 
@@ -1559,6 +1725,17 @@ Outputs:
   OperationsAlertsTopicArn:
     Description: SNS topic used for operational CloudWatch alerts.
     Value: !Ref OperationsAlertsTopic
+
+
+  EffectiveFrontendOrigin:
+    Description: Frontend origin configured for API Gateway and Lambda CORS.
+    Value: !If
+      - HasFrontendOrigin
+      - !Ref FrontendOrigin
+      - !If
+        - HasCertificate
+        - !Sub "https://${DyftLoadBalancer.DNSName}"
+        - !Sub "http://${DyftLoadBalancer.DNSName}"
 
 
   WebServer1InstanceId:
