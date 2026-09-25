@@ -18,8 +18,6 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 ## AWS Architecture
 
-\<insert architecture image here\>
-
 - **Amazon Application Load Balancer**: Distributes incoming application traffic across Amazon EC2 instances to maintain the app's availability and stability.
 
 - **Amazon EC2**: Hosts the web application server; serves user interfaces and frontend traffic management.
@@ -42,93 +40,86 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 - **Amazon Cognito**: Manages user sign-up, sign-in, and authentication flows for the web app.
 
+- **Amazon CloudWatch**: Provides dashboards and alarms for operational monitoring.
+
 ## Deployment Instructions
 
-### Prerequisites \& Dependencies
+Deploy from a cloned repository with AWS CLI credentials for the target account.
 
-- **Runtimes**: Python 3.12, Node.js 18+
-
-- **AWS Resources**: AWS CLI configured with appropriate IAM permissions
-
-- **Python Libraries**: `boto3`, `urllib3`
-
-
-- AWS CLI installed
-- an existing VPC with two public subnets
-- the project TLS certificate
-- An EC2 AMI containing Nginx, Node.js, npm, Git, and read-only access to the project repository. The provided deployment script uses the project AMI in the group AWS account; deployments in another AWS account must provide an equivalent AMI.
-
-
-
-
-The deployment is configured for:
-
-```text
-Region: us-east-1
+```bash
+./deploy.sh
 ```
 
+### Prerequisites
 
-### Environment Variables
+- AWS CLI authenticated in the user's AWS account.
+- Bash.
+- `zip`.
+- Permission to create and manage the AWS resources defined by the stack.
+- Permission to create named IAM roles because the deployment uses `CAPABILITY_NAMED_IAM`.
+- Deployment region is fixed to `us-east-1`.
+- `deploy.sh` automatically discovers the AWS-managed `com.amazonaws.global.cloudfront.origin-facing` prefix list using the AWS CLI. You do not need to provide the prefix-list ID manually.
 
-- `DB_TABLE_NAME`: The name of the REPORTS Dynamo DB table. Default is `DYFT-REPORTS`.
-- `LOOKBACK_MINUTES`: Lookback window for fetching quakes and scanning reports. Default is `60`.
-- `USE_MOCK_DATA`: Debug toggle. Forces Lambda to use local test data instead of live GeoNet API. Default is `false`.
+### AWS CLI Authentication
 
----
+If not already authenticated:
 
-### DynamoDB Schema
+```bash
+aws configure
+aws sts get-caller-identity
+```
 
-The system uses two separate DynamoDB tables to manage user profiles and user reports:
+### Optional Email Settings
 
-#### `REPORTS` Table
+These environment variables are optional:
 
-Stores all crowdsourced earthquake report submissions using a Global Secondary Index (GSI) pattern for queries.
+- `OPERATIONS_ALERT_EMAIL`: Subscribes an email address to the SNS topic used by CloudWatch alarms. The SNS subscription email must be confirmed.
+- `SES_SENDER_EMAIL`: Provides the SES-verified sender used by notification emails. If used for actual email delivery, it must satisfy the SES verification and account requirements for the deployer's AWS account.
 
-- **Primary Key:**
-  - **Partition Key (`PK`):** User identifier (e.g., `USER#user_test_001`).
-  - **Sort Key (`SK`):** Unique report identifier (e.g., `REPORT#01KXYZ`).
+### Deploy
 
-- **Global Secondary Index (`GSI1`):**
-  - **Index Partition Key (`GSI1PK`):** Set to `"REPORT"` for all report items (enables batch scanning across all unverified reports).
-  - **Index Sort Key (`GSI1SK`):** ISO-8601 UTC creation timestamp (e.g., `2026-09-17T01:02:39.000Z`).
+From the repository root:
 
-- **Attributes:**
-  - `entity_type` (String): Fixed to `"REPORT"`.
-  - `latitude` (Number): Geographic latitude of the report location (e.g., `-37.787`).
-  - `longitude` (Number): Geographic longitude of the report location (e.g., `175.304`).
-  - `timestamp` (String): ISO-8601 UTC timestamp of submission.
-  - `verified` (Boolean): Verification flag (`true` or `false`).
-  - `notification` (String): Dispatch status for alerting (`"unsent"`, `"sent"`, or `"error"`).
-  - `mmi_value` (Number / Null): MMI intensity score added upon verification.
-  - `publicID` (String / Null): GeoNet event identifier linked upon verification.
-  - `verified_at` (String / Null): ISO-8601 UTC timestamp set when verified.
-
----
-
-#### `USERS` Table
-
-Stores user profile information and contact details for notifications.
-
-- **Partition Key (`PK`):** Unique user identifier (e.g., `user_test_001`).
-- **Key Attributes:**
-  - `email` (String): User email address for receiving verification alerts.
-  - `name` (String): User display name.
-  - `created_at` (String): ISO-8601 UTC timestamp of account creation.
-
-## Deploy the application
-
-From the repository root, make the deployment script executable:
+1. If needed, make the script executable:
 
 ```bash
 chmod +x deploy.sh
 ```
 
-Then deploy:
+2. Run the automated deployment:
 
 ```bash
 ./deploy.sh
 ```
-#### Get application URLs and IDs
+
+With optional email settings:
+
+```bash
+OPERATIONS_ALERT_EMAIL="alerts@example.com" \
+SES_SENDER_EMAIL="alerts@example.com" \
+./deploy.sh
+```
+
+NOTE: CloudFront creation, updates, and deletion can take some time to complete.
+
+At a high level, the script:
+
+- discovers the AWS-managed CloudFront origin-facing prefix-list ID
+- deploys the CloudFormation stack
+- packages and uploads the four Lambda functions
+- waits for the CloudFront distribution to become deployed
+- prints the CloudFormation outputs and frontend URL
+
+
+### Get Outputs
+
+`deploy.sh` prints the stack outputs and the frontend URL at the end. Open the printed CloudFront `Frontend URL` in your browser, for example:
+
+```text
+https://dxxxxxxxxxxxx.cloudfront.net
+```
+
+To fetch the outputs again:
 
 ```bash
 aws cloudformation describe-stacks \
@@ -137,9 +128,29 @@ aws cloudformation describe-stacks \
   --query "Stacks[0].Outputs" \
   --output table
 ```
-Use the output value for LoadBalancerDNS to access the project.
 
-### Remove the automated deployment
+### HTTPS, Network Path, and CORS
+
+The frontend network path is:
+
+```text
+Browser
+  -> HTTPS
+CloudFront
+  -> HTTP port 80
+Application Load Balancer
+  -> HTTP port 80
+EC2
+```
+
+CloudFront provides the public HTTPS endpoint using its generated `cloudfront.net` domain. The ALB security group allows HTTP port 80 only from the AWS-managed CloudFront origin-facing prefix list. The EC2 security group allows HTTP port 80 only from the ALB security group.
+
+The generated CloudFront HTTPS origin is automatically used for the frontend CORS configuration used by the Lambda/API Gateway resources.
+
+
+## Remove the automated deployment
+
+Delete the stack:
 
 ```bash
 aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1

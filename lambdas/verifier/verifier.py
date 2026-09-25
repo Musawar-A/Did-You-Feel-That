@@ -12,7 +12,7 @@ LAMBDA_NAME = "DYFT-SeismicVerifier"
 DB_TABLE_NAME = os.getenv("DB_TABLE_NAME", "DYFT-REPORTS")
 
 # DynamoDB
-dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(DB_TABLE_NAME)
 
 # For verified earthquakes, use quake with minimum MMI=4
@@ -22,7 +22,7 @@ sqs = boto3.client("sqs")
 
 QUEUE_URL = os.getenv(
     "QUEUE_URL",
-    "https://sqs.us-east-1.amazonaws.com/987653905868/DYFT-DidYouQueueThat"
+    ""
 )
 
 
@@ -238,6 +238,9 @@ def lambda_handler(event, context):
                 )
                 verified_count += 1
                 # After successfully verifying the report, queue an email notification to SQS
+                if not QUEUE_URL:
+                    raise RuntimeError("QUEUE_URL is not configured")
+
                 sqs.send_message(
                     QueueUrl=QUEUE_URL,
                     MessageBody=json.dumps({
