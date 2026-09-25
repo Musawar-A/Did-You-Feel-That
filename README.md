@@ -57,6 +57,8 @@ Deploy from a cloned repository with AWS CLI credentials for the target account.
 
 ### AWS CLI Authentication
 
+If not already authenticated:
+
 ```bash
 aws configure
 aws sts get-caller-identity
@@ -66,14 +68,21 @@ aws sts get-caller-identity
 
 From the repository root:
 
+1. Make the script executable:
+
 ```bash
 chmod +x deploy.sh
+```
+
+2. For HTTP-only deployment:
+
+```bash
 ./deploy.sh
 ```
 
-HTTP-only mode works without a certificate. Browser geolocation may not work over HTTP.
+HTTP-only mode works without a certificate. Browser geolocation will not work over HTTP, therefore reports won't be able to be submitted.
 
-For HTTPS:
+2. For HTTPS deployment:
 
 ```bash
 CERTIFICATE_ARN="arn:aws:acm:us-east-1:123456789012:certificate/example" \
@@ -94,7 +103,9 @@ Optional variables:
 
 ### Get Outputs
 
-`deploy.sh` prints outputs. To fetch them later:
+`deploy.sh` prints the stack outputs at the end. Use the `LoadBalancerDNS` output for the app URL.
+
+To fetch the outputs again:
 
 ```bash
 aws cloudformation describe-stacks \
@@ -104,7 +115,7 @@ aws cloudformation describe-stacks \
   --output table
 ```
 
-Use `LoadBalancerDNS` to open the app. Use `http://<LoadBalancerDNS>` without TLS.
+Open the app at `http://<LoadBalancerDNS>` without TLS. With HTTPS and a custom domain, use your configured HTTPS domain.
 
 
 ## Remove the automated deployment

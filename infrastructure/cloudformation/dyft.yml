@@ -960,10 +960,9 @@ Resources:
           set -euxo pipefail
 
           dnf update -y
-          dnf install -y git nginx curl
+          dnf install -y git nginx
 
-          curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
-          dnf install -y nodejs
+          dnf install -y nodejs22 nodejs22-npm
 
           rm -rf /home/ec2-user/dyft-compx527
           git clone --branch ${RepositoryBranch} --single-branch ${RepositoryUrl} /home/ec2-user/dyft-compx527
@@ -1015,10 +1014,9 @@ Resources:
           set -euxo pipefail
 
           dnf update -y
-          dnf install -y git nginx curl
+          dnf install -y git nginx
 
-          curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
-          dnf install -y nodejs
+          dnf install -y nodejs22 nodejs22-npm
 
           rm -rf /home/ec2-user/dyft-compx527
           git clone --branch ${RepositoryBranch} --single-branch ${RepositoryUrl} /home/ec2-user/dyft-compx527

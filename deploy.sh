@@ -38,7 +38,7 @@ FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-}"
 OPERATIONS_ALERT_EMAIL="${OPERATIONS_ALERT_EMAIL:-}"
 SES_SENDER_EMAIL="${SES_SENDER_EMAIL:-}"
 REPOSITORY_URL="https://github.com/Musawar-A/dyft-compx527.git"
-REPOSITORY_BRANCH="main"
+REPOSITORY_BRANCH="automation"
 
 if ! command -v aws >/dev/null 2>&1; then
   echo "Error: aws CLI is not installed or not on PATH." >&2
