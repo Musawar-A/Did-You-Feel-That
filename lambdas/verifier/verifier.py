@@ -18,6 +18,13 @@ table = dynamodb.Table(DB_TABLE_NAME)
 # For verified earthquakes, use quake with minimum MMI=4
 GEONET_MMI_URL = "https://api.geonet.org.nz/quake?MMI=4"
 
+sqs = boto3.client("sqs")
+
+QUEUE_URL = os.getenv(
+    "QUEUE_URL",
+    "https://sqs.us-east-1.amazonaws.com/987653905868/DYFT-DidYouQueueThat"
+)
+
 
 def haversine_km(lat1, lon1, lat2, lon2):
     """
@@ -230,6 +237,15 @@ def lambda_handler(event, context):
                     },
                 )
                 verified_count += 1
+                # After successfully verifying the report, queue an email notification to SQS
+                sqs.send_message(
+                    QueueUrl=QUEUE_URL,
+                    MessageBody=json.dumps({
+                        "user_id": pk,
+                        "report_id": sk
+                    })
+                )
+
                 break
     print(f"# of unverified reports: {len(unverified_reports)}")
     print(f"# of features with MMI>=4: {len(features)}")

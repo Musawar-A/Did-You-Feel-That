@@ -1,4 +1,5 @@
 .aws/
+.deployment/
 *.pem
 *.cer
 *.crt
