@@ -116,6 +116,51 @@ def get_nearby_reports(
 
     return nearby_reports
 
+def has_recent_report(user_id, lookback_minutes=15):
+    """
+    Check whether the authenticated user has submitted a report
+    within the last `lookback_minutes` minutes.
+    """
+    # Get 15 minute lookback time offset
+    now = datetime.now(timezone.utc)
+    lookback_time = now - timedelta(minutes=lookback_minutes)
+
+    try:
+        # Get all reports from the user by the timestamp
+        response = table.query(
+            KeyConditionExpression="PK = :pk",
+            ExpressionAttributeValues={
+                ":pk": f"USER#{user_id}",
+            },
+            ProjectionExpression="#ts",
+            ExpressionAttributeNames={
+                "#ts": "timestamp",
+            },
+        )
+
+        # Iterate through returned reports, checking for reports made in the last 15 minutes
+        for item in response.get("Items", []):
+            timestamp_string = item.get("timestamp")
+
+            if not timestamp_string:
+                continue
+
+            try:
+                report_time = datetime.fromisoformat(
+                    timestamp_string.replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+
+            if report_time >= lookback_time:
+                return True
+
+        return False
+
+    except ClientError as e:
+        print(f"Error checking for recent report: {e}")
+        raise
+
 
 # This function is to be triggered when a user clicks the "I Felt That" button
 # Parameters:
@@ -139,6 +184,19 @@ def lambda_handler(event, context):
             "headers": CORS_HEADERS,
             "body": json.dumps({"message": "Unable to determine authenticated user"}),
         }
+
+    # Prevent the user from submitting more than one report within a 15-minute window.
+    if has_recent_report(user_id, lookback_minutes=15):
+        return {
+            "statusCode": 429,
+            "headers": CORS_HEADERS,
+            "body": json.dumps(
+                {
+                    "message": "You have already submitted a report within the last 15 minutes"
+                }
+            ),
+        }
+
 
     # Parse the request body to body var, error if invalid body
     try:
