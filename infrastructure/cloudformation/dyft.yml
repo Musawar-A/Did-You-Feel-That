@@ -26,16 +26,9 @@ Parameters:
     Default: main
     Description: Git branch checked out by EC2 web servers.
 
-  CertificateArn:
+  CloudFrontOriginPrefixListId:
     Type: String
-    Default: ""
-    NoEcho: true
-    Description: Optional ARN of an existing ACM or IAM TLS certificate used by the ALB HTTPS listener.
-
-  FrontendOrigin:
-    Type: String
-    Default: ""
-    Description: Optional allowed frontend origin for API Gateway and Lambda CORS responses.
+    Description: AWS-managed prefix list ID for com.amazonaws.global.cloudfront.origin-facing.
 
   OperationsAlertEmail:
     Type: String
@@ -50,9 +43,6 @@ Parameters:
 
 Conditions:
 
-  HasCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
-  NoCertificate: !Not [!Condition HasCertificate]
-  HasFrontendOrigin: !Not [!Equals [!Ref FrontendOrigin, ""]]
   HasOperationsAlertEmail: !Not [!Equals [!Ref OperationsAlertEmail, ""]]
 
 
@@ -427,13 +417,7 @@ Resources:
       Environment:
         Variables:
           REPORTS_TABLE_NAME: !Ref ReportsTable
-          FRONTEND_ORIGIN: !If
-            - HasFrontendOrigin
-            - !Ref FrontendOrigin
-            - !If
-              - HasCertificate
-              - !Sub "https://${DyftLoadBalancer.DNSName}"
-              - !Sub "http://${DyftLoadBalancer.DNSName}"
+          FRONTEND_ORIGIN: !Sub "https://${DyftCloudFront.DomainName}"
 
       Code:
         ZipFile: |
@@ -491,13 +475,7 @@ Resources:
       Environment:
         Variables:
           USERS_TABLE_NAME: !Ref UsersTable
-          FRONTEND_ORIGIN: !If
-            - HasFrontendOrigin
-            - !Ref FrontendOrigin
-            - !If
-              - HasCertificate
-              - !Sub "https://${DyftLoadBalancer.DNSName}"
-              - !Sub "http://${DyftLoadBalancer.DNSName}"
+          FRONTEND_ORIGIN: !Sub "https://${DyftCloudFront.DomainName}"
 
       Code:
         ZipFile: |
@@ -672,13 +650,7 @@ Resources:
                 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
               method.response.header.Access-Control-Allow-Methods: >-
                 'OPTIONS,POST'
-              method.response.header.Access-Control-Allow-Origin: !If
-                - HasFrontendOrigin
-                - !Sub "'${FrontendOrigin}'"
-                - !If
-                  - HasCertificate
-                  - !Sub "'https://${DyftLoadBalancer.DNSName}'"
-                  - !Sub "'http://${DyftLoadBalancer.DNSName}'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'https://${DyftCloudFront.DomainName}'"
 
       MethodResponses:
         - StatusCode: 200
@@ -792,13 +764,7 @@ Resources:
                 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
               method.response.header.Access-Control-Allow-Methods: >-
                 'OPTIONS,POST'
-              method.response.header.Access-Control-Allow-Origin: !If
-                - HasFrontendOrigin
-                - !Sub "'${FrontendOrigin}'"
-                - !If
-                  - HasCertificate
-                  - !Sub "'https://${DyftLoadBalancer.DNSName}'"
-                  - !Sub "'http://${DyftLoadBalancer.DNSName}'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'https://${DyftCloudFront.DomainName}'"
 
       MethodResponses:
         - StatusCode: 200
@@ -896,19 +862,14 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: !Sub "${DeploymentPrefix}-ALB-SG"
-      GroupDescription: Allow public HTTP/HTTPS traffic to the DYFT ALB.
+      GroupDescription: Allow HTTP traffic to the DYFT ALB only from CloudFront origin-facing servers.
       VpcId: !Ref DyftVpc
 
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 0.0.0.0/0
-
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
+          SourcePrefixListId: !Ref CloudFrontOriginPrefixListId
 
       SecurityGroupEgress:
         - IpProtocol: -1
@@ -1122,26 +1083,8 @@ Resources:
   # ALB Listeners
   # ------------------------------------------------
 
-  HttpRedirectListener:
+  HttpListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    Condition: HasCertificate
-    Properties:
-      LoadBalancerArn: !Ref DyftLoadBalancer
-
-      Protocol: HTTP
-      Port: 80
-
-      DefaultActions:
-        - Type: redirect
-          RedirectConfig:
-            Protocol: HTTPS
-            Port: "443"
-            StatusCode: HTTP_301
-
-
-  HttpForwardListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Condition: NoCertificate
     Properties:
       LoadBalancerArn: !Ref DyftLoadBalancer
 
@@ -1153,25 +1096,43 @@ Resources:
           TargetGroupArn: !Ref WebTargetGroup
 
 
-  HttpsListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Condition: HasCertificate
+  # ------------------------------------------------
+  # CloudFront
+  # ------------------------------------------------
+
+  DyftCloudFront:
+    Type: AWS::CloudFront::Distribution
     Properties:
-      LoadBalancerArn: !Ref DyftLoadBalancer
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
 
-      Protocol: HTTPS
-      Port: 443
+        Origins:
+          - Id: DYFT-ALB-Origin
+            DomainName: !GetAtt DyftLoadBalancer.DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
 
-      Certificates:
-        - CertificateArn: !Ref CertificateArn
+        DefaultCacheBehavior:
+          TargetOriginId: DYFT-ALB-Origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
 
-      SslPolicy: ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
 
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref WebTargetGroup
 
-    # ------------------------------------------------
+  # ------------------------------------------------
   # CloudWatch Dashboard
   # ------------------------------------------------
 
@@ -1688,6 +1649,16 @@ Outputs:
     Value: !GetAtt DyftLoadBalancer.DNSName
 
 
+  FrontendUrl:
+    Description: HTTPS CloudFront URL users should open for the DYFT frontend.
+    Value: !Sub "https://${DyftCloudFront.DomainName}"
+
+
+  CloudFrontDistributionId:
+    Description: DYFT CloudFront distribution ID.
+    Value: !Ref DyftCloudFront
+
+
   UserApiUrl:
     Description: DYFT user API endpoint.
     Value: !Sub >
@@ -1727,13 +1698,7 @@ Outputs:
 
   EffectiveFrontendOrigin:
     Description: Frontend origin configured for API Gateway and Lambda CORS.
-    Value: !If
-      - HasFrontendOrigin
-      - !Ref FrontendOrigin
-      - !If
-        - HasCertificate
-        - !Sub "https://${DyftLoadBalancer.DNSName}"
-        - !Sub "http://${DyftLoadBalancer.DNSName}"
+    Value: !Sub "https://${DyftCloudFront.DomainName}"
 
 
   WebServer1InstanceId:

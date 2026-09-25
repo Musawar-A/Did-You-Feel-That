@@ -42,18 +42,25 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 - **Amazon Cognito**: Manages user sign-up, sign-in, and authentication flows for the web app.
 
+- **Amazon CloudWatch**: Provides dashboards and alarms for operational monitoring.
+
 ## Deployment Instructions
 
 Deploy from a cloned repository with AWS CLI credentials for the target account.
 
+```bash
+./deploy.sh
+```
+
 ### Prerequisites
 
 - AWS CLI authenticated in the user's AWS account.
-- Permission to create the project resources and named IAM roles.
-- Bash and `zip`.
+- Bash.
+- `zip`.
+- Permission to create and manage the AWS resources defined by the stack.
+- Permission to create named IAM roles because the deployment uses `CAPABILITY_NAMED_IAM`.
 - Deployment region is fixed to `us-east-1`.
-- TLS is optional. Set `CERTIFICATE_ARN` for HTTPS; omit it for HTTP-only.
-- SES is only needed for email notification testing. Set `SES_SENDER_EMAIL` to a verified SES sender.
+- `deploy.sh` automatically discovers the AWS-managed `com.amazonaws.global.cloudfront.origin-facing` prefix list using the AWS CLI. You do not need to provide the prefix-list ID manually.
 
 ### AWS CLI Authentication
 
@@ -64,46 +71,55 @@ aws configure
 aws sts get-caller-identity
 ```
 
+### Optional Email Settings
+
+These environment variables are optional:
+
+- `OPERATIONS_ALERT_EMAIL`: Subscribes an email address to the SNS topic used by CloudWatch alarms. The SNS subscription email must be confirmed.
+- `SES_SENDER_EMAIL`: Provides the SES-verified sender used by notification emails. If used for actual email delivery, it must satisfy the SES verification and account requirements for the deployer's AWS account.
+
 ### Deploy
 
 From the repository root:
 
-1. Make the script executable:
+1. If needed, make the script executable:
 
 ```bash
 chmod +x deploy.sh
 ```
 
-2. For HTTP-only deployment:
+2. Run the automated deployment:
 
 ```bash
 ./deploy.sh
 ```
 
-HTTP-only mode works without a certificate. Browser geolocation will not work over HTTP, therefore reports won't be able to be submitted.
-
-2. For HTTPS deployment:
+With optional email settings:
 
 ```bash
-CERTIFICATE_ARN="arn:aws:acm:us-east-1:123456789012:certificate/example" \
-FRONTEND_ORIGIN="https://example.com" \
 OPERATIONS_ALERT_EMAIL="alerts@example.com" \
 SES_SENDER_EMAIL="alerts@example.com" \
 ./deploy.sh
 ```
 
-Only `CERTIFICATE_ARN` is needed for HTTPS. Set only the optional values you need. Omit `FRONTEND_ORIGIN` when using the ALB DNS name.
+NOTE: CloudFront creation, updates, and deletion can take some time to complete.
 
-Optional variables:
+At a high level, the script:
 
-- `CERTIFICATE_ARN`: Enables HTTPS. Omit for HTTP-only.
-- `FRONTEND_ORIGIN`: CORS origin. Set this when using a custom domain.
-- `OPERATIONS_ALERT_EMAIL`: Optional CloudWatch alarm email. Confirm the SNS email.
-- `SES_SENDER_EMAIL`: Optional verified SES sender.
+- discovers the AWS-managed CloudFront origin-facing prefix-list ID
+- deploys the CloudFormation stack
+- packages and uploads the four Lambda functions
+- waits for the CloudFront distribution to become deployed
+- prints the CloudFormation outputs and frontend URL
+
 
 ### Get Outputs
 
-`deploy.sh` prints the stack outputs at the end. Use the `LoadBalancerDNS` output for the app URL.
+`deploy.sh` prints the stack outputs and the frontend URL at the end. Open the printed CloudFront `Frontend URL` in your browser, for example:
+
+```text
+https://dxxxxxxxxxxxx.cloudfront.net
+```
 
 To fetch the outputs again:
 
@@ -115,12 +131,28 @@ aws cloudformation describe-stacks \
   --output table
 ```
 
-Open the app at `http://<LoadBalancerDNS>` without TLS. With HTTPS and a custom domain, use your configured HTTPS domain.
+### HTTPS, Network Path, and CORS
+
+The frontend network path is:
+
+```text
+Browser
+  -> HTTPS
+CloudFront
+  -> HTTP port 80
+Application Load Balancer
+  -> HTTP port 80
+EC2
+```
+
+CloudFront provides the public HTTPS endpoint using its generated `cloudfront.net` domain. The ALB security group allows HTTP port 80 only from the AWS-managed CloudFront origin-facing prefix list. The EC2 security group allows HTTP port 80 only from the ALB security group.
+
+The generated CloudFront HTTPS origin is automatically used for the frontend CORS configuration used by the Lambda/API Gateway resources.
 
 
 ## Remove the automated deployment
 
-Delete the stack after testing to stop ongoing AWS charges:
+Delete the stack:
 
 ```bash
 aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1
