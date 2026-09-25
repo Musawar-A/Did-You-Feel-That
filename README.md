@@ -4,8 +4,8 @@
 
 - **Musawar Ahmad (1629548)** - Group Leader and IAM Role and Policies management
 - **Ernest Divina (1627071)** - Cognito and User management, Backend: Cognito Lambda, and Frontend: part user login/registration pages with Mohammad
-- **Charles Gerard Serrato (1625871)** - Backend: Verifier Lambda, EventBridge, GeoNet API
-- **Jed Thompson (1709677)** - Backend: Notifier Lambda, SQS, SNS, Backend Ingestion
+- **Charles Gerard Serrato (1625871)** - Backend: Verifier Lambda, EventBridge, GeoNet API, part of Ingestion Lambda
+- **Jed Thomson (1709677)** - Backend: Notifier Lambda, DynamoDB, SQS, SES, Backend Ingestion
 - **Mohammad Emon (1640350)** - Frontend: Webapp UI/UX
 
 ## Overview
@@ -28,17 +28,17 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 - **Amazon DynamoDB**: Partitioned into two tables: `DYFT-REPORTS` which stores user report items, and `DYFT-USERS` which stores user account information.
 
-- **Amazon Lambda (Verifier)**: Queries GeoNet API every 15 minutes via `EventBridge`, scans `DYFT-REPORTS` for unverified reports, and updates matching report fields to `verified = true`.
+- **Amazon Lambda (Verifier)**: Queries GeoNet API every 15 minutes via `EventBridge`, scans `DYFT-REPORTS` for unverified reports, and updates matching report fields to `verified = true`, and queues email notifications to SQS.
 
 - **Amazon EventBridge**: Triggers the `Verifier` Lambda on a 15-minute schedule to poll the GeoNet API for new earthquake data.
 
 - **GeoNet API**: Acts as the external source of truth, providing real-time seismic feature data to the `Verifier` Lambda.
 
-- **Amazon Lambda (Notifier)**: Checks the `DYFT-REPORTS` for changes in report verification status, updates `notification` flags in the database, and pushes jobs to Amazon SQS.
+- **Amazon Lambda (Notifier)**: Triggered by the `DYFT-DidYouQueueThat` SQS queue, sends email notifications to users who have had their report verified by the `Verfier`.
 
-- **Amazon SQS**: Buffers notification messages from the `Notifier` Lambda before sending them downstream to Amazon SNS.
+- **Amazon SQS**: Buffers notification messages from the `Verifier` Lambda to the `Notifier` Lambda which sends them downstream to Amazon SES.
 
-- **Amazon SNS**: Delivers earthquake alert notifications to users.
+- **Amazon SES**: Delivers alerts via email to users if their reports are verified against GeoNet earthquake data.
 
 - **Amazon Cognito**: Manages user sign-up, sign-in, and authentication flows for the web app.
 
@@ -51,6 +51,22 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 - **AWS Resources**: AWS CLI configured with appropriate IAM permissions
 
 - **Python Libraries**: `boto3`, `urllib3`
+
+
+- AWS CLI installed
+- an existing VPC with two public subnets
+- the project TLS certificate
+- An EC2 AMI containing Nginx, Node.js, npm, Git, and read-only access to the project repository. The provided deployment script uses the project AMI in the group AWS account; deployments in another AWS account must provide an equivalent AMI.
+
+
+
+
+The deployment is configured for:
+
+```text
+Region: us-east-1
+```
+
 
 ### Environment Variables
 
@@ -98,3 +114,33 @@ Stores user profile information and contact details for notifications.
   - `email` (String): User email address for receiving verification alerts.
   - `name` (String): User display name.
   - `created_at` (String): ISO-8601 UTC timestamp of account creation.
+
+## Deploy the application
+
+From the repository root, make the deployment script executable:
+
+```bash
+chmod +x deploy.sh
+```
+
+Then deploy:
+
+```bash
+./deploy.sh
+```
+#### Get application URLs and IDs
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name dyft-auto-compx527 \
+  --region us-east-1 \
+  --query "Stacks[0].Outputs" \
+  --output table
+```
+Use the output value for LoadBalancerDNS to access the project.
+
+### Remove the automated deployment
+
+```bash
+aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1
+```

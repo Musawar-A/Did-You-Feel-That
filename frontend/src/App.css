@@ -16,6 +16,23 @@
     outline-offset: 2px;
   }
 }
+@keyframes hideMessage {
+  0% {
+    opacity: 1;
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.auto-hide-message {
+  animation: hideMessage 2.5s ease-out forwards;
+}
 
 .hero {
   position: relative;
@@ -167,7 +184,7 @@
 
   &::before,
   &::after {
-    content: '';
+    content: "";
     position: absolute;
     top: -4.5px;
     border: 5px solid transparent;

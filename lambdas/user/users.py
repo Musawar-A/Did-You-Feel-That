@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 # Change this to False (or set env var USE_LOCAL_DB=false) to use AWS DynamoDB.
 # USE_LOCAL_DB = os.getenv("USE_LOCAL_DB", "true").lower() == "true"
 USE_LOCAL_DB = False 
-TABLE_NAME = "DYFT-USERS"
+TABLE_NAME = os.getenv("USERS_TABLE_NAME", "DYFT-USERS")
 
 if USE_LOCAL_DB:
     dynamodb = boto3.resource(
@@ -70,12 +70,12 @@ def lambda_handler(event, context):
                 "#pk": "USER#"
             }
         )
-        return _response(201, {"message": "User created", "userId": user_id})
+        return _response(201, {"message": "User created"})
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
 
         if error_code == "ConditionalCheckFailedException":
-            return _response(200, {"message": "User already exists", "userId": user_id}) #user already exists = ignore
+            return _response(200, {"message": "User already exists"}) #user already exists = ignore
 
         # Anything else is unexpected - log detail server-side, keep response generic.
         return _response(500, {"error": "Internal server error"})

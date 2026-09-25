@@ -9,7 +9,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 LAMBDA_NAME = "DYFT-Ingestion"
-TABLE_NAME = "DYFT-REPORTS"
+TABLE_NAME = os.getenv("REPORTS_TABLE_NAME", "DYFT-REPORTS")
 
 # DynamoDB
 dynamodb = boto3.resource("dynamodb")
