@@ -14,7 +14,7 @@ async function submitReport(latitude, longitude) {
     throw new Error("User is not authenticated");
   }
 
-  // Send the report to our backend through API Gateway.
+  // Send the report to the backend through API Gateway.
   const response = await fetch(
     `${import.meta.env.VITE_API_GATEWAY_URL_REPORTS}/reports`,
     {
@@ -31,21 +31,21 @@ async function submitReport(latitude, longitude) {
   );
 
   // Read the response even when the backend returns an error.
-  // This lets us handle responses such as HTTP 429 properly.
+  // This allows us to handle responses such as HTTP 429.
   const responseText = await response.text();
 
   let responseData;
 
-  // The backend normally sends JSON, so convert the response
+  // The backend normally returns JSON, so convert the response
   // into a JavaScript object when possible.
   try {
     responseData = JSON.parse(responseText);
   } catch {
-    // If the response is plain text instead, keep it as text.
+    // If the backend sends plain text instead, keep it as text.
     responseData = responseText;
   }
 
-  // Return both the status code and the backend's response.
+  // Return the status code and the backend response together.
   return {
     statusCode: response.status,
     body: responseData,
@@ -59,25 +59,24 @@ function MainPage() {
   // Makes the "I FELT THAT" button look pressed while clicking it.
   const [isPressed, setIsPressed] = useState(false);
 
-  // Stores reports successfully submitted by this user.
+  // Stores reports that were successfully submitted by this user.
   const [feltReports, setFeltReports] = useState([]);
 
   // Stores nearby reports returned by the backend.
   const [nearbyReports, setNearbyReports] = useState([]);
 
-  // Stores how many nearby reports the backend found.
+  // Stores the number of nearby reports returned by the backend.
   const [nearbyReportCount, setNearbyReportCount] = useState(0);
 
-  // Prevents another request while the current request is still running.
+  // Prevents another request while the current request is still processing.
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Controls the message shown when the backend says
-  // the user has already reported within the last 15 minutes.
+  // Controls the temporary message shown when the backend
+  // says the user has already reported within 15 minutes.
   const [showAlreadyReported, setShowAlreadyReported] = useState(false);
 
   // Remembers that the user has successfully submitted a report.
-  // This allows the previous report-count message to appear again
-  // after the temporary warning disappears.
+  // This stays true even if a later report is rejected with HTTP 429.
   const [hasReported, setHasReported] = useState(false);
 
   useEffect(() => {
@@ -106,21 +105,21 @@ function MainPage() {
       return;
     }
 
-    // Do not send another request while the current one is still processing.
+    // Do not send another request while the current request
+    // is still being processed.
     if (isSubmitting) {
       return;
     }
 
     try {
-      // Lock the submission while the backend is processing it.
+      // Lock the submission while the backend processes it.
       setIsSubmitting(true);
 
-      // Remove any previous "already reported" warning
-      // before processing this new click.
+      // Hide any previous 429 warning before processing this click.
       setShowAlreadyReported(false);
 
       // Add a small random offset to protect the user's exact location.
-      // The actual location is never sent directly to the backend.
+      // The actual browser location is not sent directly to the backend.
       const latitudeOffset = (Math.random() - 0.5) * 0.05;
       const longitudeOffset = (Math.random() - 0.5) * 0.05;
 
@@ -135,19 +134,15 @@ function MainPage() {
         reportLocation.longitude,
       );
 
-      // These logs make it easy to see exactly what the backend returned
-      // while testing the application.
+      // These logs help us see exactly what the backend returned.
       console.log("========== REPORT RESPONSE ==========");
       console.log("Status code:", result?.statusCode);
       console.log("Response body:", result?.body);
 
       const data = result?.body;
 
-      // 15-MINUTE RESTRICTION
-      // The backend is responsible for checking whether this user
-      // has already submitted a report within the last 15 minutes.
-      //
-      // If the backend returns 429, the report was not accepted.
+      // If the backend returns 429, it means this user has
+      // already submitted a report within the last 15 minutes.
       if (result?.statusCode === 429) {
         console.log(
           "Report rejected: user already reported within the last 15 minutes.",
@@ -157,48 +152,43 @@ function MainPage() {
         setShowAlreadyReported(true);
 
         // Hide the warning after 2.5 seconds.
-        // We are NOT calculating the 15-minute restriction here.
-        // The backend is responsible for that.
+        // The backend still controls the actual 15-minute restriction.
         setTimeout(() => {
           setShowAlreadyReported(false);
         }, 2500);
 
-        // Stop here because this report was not accepted.
+        // Do not add another red dot because this report
+        // was rejected by the backend.
         return;
       }
 
-      // OTHER BACKEND ERRORS
-      // If the response is not a successful 2xx response,
-      // something else went wrong with the request.
+      // Handle other errors returned by the backend.
       if (result?.statusCode < 200 || result?.statusCode >= 300) {
         console.error("Report submission failed:", result?.statusCode, data);
 
         return;
       }
 
-      // SUCCESSFUL REPORT
-      // Only show the new report marker after the backend
+      // Only add the new report marker after the backend
       // confirms that the report was successfully registered.
       setFeltReports((reports) => [...reports, reportLocation]);
 
-      // Save the nearby reports returned by the backend.
+      // Store the nearby reports returned by the backend.
       setNearbyReports(data?.nearbyReports || []);
 
-      // Save the number of nearby reports returned by the backend.
+      // Store the number of nearby reports returned by the backend.
       setNearbyReportCount(data?.nearbyReportCount || 0);
 
-      // Remember that this user has successfully reported.
-      // This is also used to bring the report-count message back
-      // after the temporary 429 warning disappears.
+      // Remember that the user has successfully reported.
+      // This remains true even if a later click gets a 429 response.
       setHasReported(true);
 
       console.log("Report successfully registered.");
     } catch (error) {
-      // Handle unexpected problems such as network errors
-      // or authentication problems.
+      // Handle unexpected problems such as network or authentication errors.
       console.error("Could not submit earthquake report:", error);
     } finally {
-      // The request has finished, so another click can be processed.
+      // The request has finished, so another request can be attempted.
       setIsSubmitting(false);
     }
   };
@@ -248,8 +238,8 @@ function MainPage() {
           nearbyReports={nearbyReports}
         />
 
-        {/* Show this message when the backend returns HTTP 429.
-            The message automatically disappears after 2.5 seconds. */}
+        {/* Show the temporary warning when the backend returns HTTP 429.
+            This message disappears after 2.5 seconds. */}
         {showAlreadyReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
@@ -262,11 +252,12 @@ function MainPage() {
           </div>
         )}
 
-        {/* Show the successful report result.
-            Because hasReported stays true, this message can appear
-            again after the temporary 429 warning disappears. */}
-        {hasReported && !showAlreadyReported && (
-          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
+        {/* Keep showing the successful report result.
+            This does not depend on showAlreadyReported, so the
+            previous result remains available when a later click
+            is rejected with HTTP 429. */}
+        {hasReported && (
+          <div className="auto-hide-message absolute top-36 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
               {nearbyReportCount === 0 ? (
                 <span className="text-xl font-bold">
@@ -292,7 +283,7 @@ function MainPage() {
         )}
       </div>
 
-      {/* Explain why report markers are not exact user locations. */}
+      {/* Explain why report markers do not show exact user locations. */}
       <p className="text-sm text-gray-500 text-center px-6 py-3">
         Locations are shown with an offset and will not represent the actual
         location of other users&apos; reports.
