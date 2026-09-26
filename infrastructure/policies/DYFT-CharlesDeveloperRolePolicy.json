@@ -1,0 +1,117 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ManageSeismicVerifierSchedules",
+            "Effect": "Allow",
+            "Action": [
+                "scheduler:CreateSchedule",
+                "scheduler:UpdateSchedule",
+                "scheduler:DeleteSchedule",
+                "scheduler:GetSchedule"
+            ],
+            "Resource": "arn:aws:scheduler:us-east-1:987653905868:schedule/*/*"
+        },
+        {
+            "Sid": "ListSchedules",
+            "Effect": "Allow",
+            "Action": "scheduler:ListSchedules",
+            "Resource": "*"
+        },
+        {
+            "Sid": "ManageProjectLambdaFunctions",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:CreateFunction",
+                "lambda:GetFunction",
+                "lambda:GetFunctionConfiguration",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration",
+                "lambda:InvokeFunction",
+                "lambda:DeleteFunction",
+                "lambda:TagResource",
+                "lambda:UntagResource",
+                "lambda:ListTags"
+            ],
+            "Resource": "arn:aws:lambda:*:987653905868:function:DYFT-*"
+        },
+        {
+            "Sid": "DYFTDynamoDBAccess",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:Scan",
+                "dynamodb:Query",
+                "dynamodb:DeleteItem",
+                "dynamodb:BatchWriteItem"
+            ],
+            "Resource": [
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-REPORTS",
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-REPORTS/index/*"
+            ]
+        },
+        {
+            "Sid": "DYFTAllowConsoleReadOnlyList",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:ListFunctions",
+                "dynamodb:ListTables"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ViewLambdaLogs",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogGroups",
+                "logs:DescribeLogStreams",
+                "logs:GetLogEvents",
+                "logs:FilterLogEvents"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ListRolesForLambdaConsole",
+            "Effect": "Allow",
+            "Action": [
+                "iam:ListRoles"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ViewVerifierExecutionRole",
+            "Effect": "Allow",
+            "Action": [
+                "iam:GetRole",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies"
+            ],
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-VerifierLambdaRole"
+        },
+        {
+            "Sid": "PassVerifierExecutionRoleToLambda",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-VerifierLambdaRole",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "lambda.amazonaws.com"
+                }
+            }
+        },
+        {
+            "Sid": "PassSeismicVerifierSchedulerRole",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-SeismicVerifierSchedulerRole",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "scheduler.amazonaws.com"
+                }
+            }
+        }
+    ]
+}

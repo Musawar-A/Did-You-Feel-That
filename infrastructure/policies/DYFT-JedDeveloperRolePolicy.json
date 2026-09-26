@@ -1,0 +1,251 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ManageProjectRestApis",
+            "Effect": "Allow",
+            "Action": [
+                "apigateway:POST",
+                "apigateway:PUT",
+                "apigateway:PATCH"
+            ],
+            "Resource": [
+                "arn:aws:apigateway:us-east-1::/restapis",
+                "arn:aws:apigateway:us-east-1::/restapis/nbkmx6iv49",
+                "arn:aws:apigateway:us-east-1::/restapis/nbkmx6iv49/*",
+                "arn:aws:apigateway:us-east-1::/restapis/tocc07hva6",
+                "arn:aws:apigateway:us-east-1::/restapis/tocc07hva6/*"
+            ]
+        },
+        {
+            "Sid": "ManageApiGatewayLambdaPermission",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:AddPermission",
+                "lambda:RemovePermission",
+                "lambda:GetPolicy"
+            ],
+            "Resource": "arn:aws:lambda:us-east-1:987653905868:function:DYFT-Ingestion"
+        },
+        {
+            "Sid": "ViewApiGatewayConsoleSupport",
+            "Effect": "Allow",
+            "Action": "apigateway:GET",
+            "Resource": "*"
+        },
+        {
+            "Sid": "ManageLambdaFunctions",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:CreateFunction",
+                "lambda:GetFunction",
+                "lambda:GetFunctionConfiguration",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration",
+                "lambda:InvokeFunction",
+                "lambda:DeleteFunction",
+                "lambda:TagResource",
+                "lambda:UntagResource",
+                "lambda:ListTags"
+            ],
+            "Resource": [
+                "arn:aws:lambda:us-east-1:987653905868:function:DYFT-Ingestion",
+                "arn:aws:lambda:us-east-1:987653905868:function:DYFT-Notifier",
+                "arn:aws:lambda:us-east-1:987653905868:function:DYFT-SeismicVerifier"
+            ]
+        },
+        {
+            "Sid": "ManageNotifierSQSTrigger",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:CreateEventSourceMapping",
+                "lambda:GetEventSourceMapping",
+                "lambda:UpdateEventSourceMapping",
+                "lambda:DeleteEventSourceMapping"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "ArnEquals": {
+                    "lambda:FunctionArn": "arn:aws:lambda:us-east-1:987653905868:function:DYFT-Notifier"
+                }
+            }
+        },
+        {
+            "Sid": "ManageDYFTSQSQueues",
+            "Effect": "Allow",
+            "Action": [
+                "sqs:CreateQueue",
+                "sqs:GetQueueUrl",
+                "sqs:GetQueueAttributes",
+                "sqs:SetQueueAttributes",
+                "sqs:DeleteQueue",
+                "sqs:TagQueue",
+                "sqs:UntagQueue"
+            ],
+            "Resource": "arn:aws:sqs:us-east-1:987653905868:DYFT-*"
+        },
+        {
+            "Sid": "ReadCloudWatchMetrics",
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:GetMetricData",
+                "cloudwatch:GetMetricStatistics",
+                "cloudwatch:ListMetrics"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ReadDYFTCloudWatchLogs",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogStreams",
+                "logs:GetLogEvents",
+                "logs:FilterLogEvents"
+            ],
+            "Resource": [
+                "arn:aws:logs:us-east-1:987653905868:log-group:/aws/lambda/DYFT-*",
+                "arn:aws:logs:us-east-1:987653905868:log-group:/aws/lambda/DYFT-*:*"
+            ]
+        },
+        {
+            "Sid": "ReadSESConsoleData",
+            "Effect": "Allow",
+            "Action": [
+                "ses:Get*",
+                "ses:List*",
+                "ses:Describe*",
+                "ses:CreateEmailIdentity"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ReadDNSAndRegionInfoForSES",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeRegions",
+                "route53:ListHostedZones"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ListSQSQueues",
+            "Effect": "Allow",
+            "Action": "sqs:ListQueues",
+            "Resource": "*"
+        },
+        {
+            "Sid": "ListLambda",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:ListFunctions",
+                "lambda:ListEventSourceMappings"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ListDynamoDBTables",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:ListTables"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ManageProjectDynamoDBTables",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:CreateTable",
+                "dynamodb:DescribeTable",
+                "dynamodb:UpdateTable",
+                "dynamodb:DeleteTable",
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan"
+            ],
+            "Resource": [
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-USERS",
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-USERS/index/*",
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-REPORTS",
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-REPORTS/index/*"
+            ]
+        },
+        {
+            "Sid": "ManageNotifierSESConfigurationSet",
+            "Effect": "Allow",
+            "Action": [
+                "ses:CreateConfigurationSet",
+                "ses:GetConfigurationSet",
+                "ses:UpdateConfigurationSet",
+                "ses:DeleteConfigurationSet"
+            ],
+            "Resource": "arn:aws:ses:us-east-1:987653905868:configuration-set/my-first-configuration-set"
+        },
+        {
+            "Sid": "ManageNotifierSESIdentity",
+            "Effect": "Allow",
+            "Action": [
+                "ses:CreateEmailIdentity",
+                "ses:GetEmailIdentity",
+                "ses:GetEmailIdentityPolicies",
+                "ses:DeleteEmailIdentity",
+                "ses:UntagResource",
+                "ses:ListTagsForResource",
+                "ses:PutEmailIdentityDkimAttributes",
+                "ses:PutEmailIdentityDkimSigningAttributes",
+                "ses:PutEmailIdentityFeedbackAttributes",
+                "ses:PutEmailIdentityMailFromAttributes",
+                "ses:PutEmailIdentityConfigurationSetAttributes",
+                "ses:ListEmailIdentityCertificates"
+            ],
+            "Resource": [
+                "arn:aws:ses:us-east-1:987653905868:identity/jjt25@students.waikato.ac.nz",
+                "arn:aws:ses:us-east-1:987653905868:identity/didyoufeelthat.devs.surf"
+            ]
+        },
+        {
+            "Sid": "ManageSESAccountSettings",
+            "Effect": "Allow",
+            "Action": [
+                "ses:GetAccount",
+                "ses:PutAccountSuppressionAttributes",
+                "ses:GetEmailIdentity",
+                "ses:ListEmailIdentities",
+                "ses:ListRecommendations",
+                "ses:TagResource"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ListRolesForLambdaConsole",
+            "Effect": "Allow",
+            "Action": [
+                "iam:ListRoles"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ViewNotifierExecutionRole",
+            "Effect": "Allow",
+            "Action": [
+                "iam:GetRole",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies"
+            ],
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-NotifierLambdaRole"
+        },
+        {
+            "Sid": "PassNotifierExecutionRoleToLambda",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-NotifierLambdaRole",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "lambda.amazonaws.com"
+                }
+            }
+        }
+    ]
+}
