@@ -16,15 +16,13 @@ Parameters:
     Description: >
       Public SSM parameter for the latest Amazon Linux 2023 x86_64 AMI.
 
-  RepositoryUrl:
+  FrontendArtifactBucket:
     Type: String
-    Default: https://github.com/Musawar-A/dyft-compx527.git
-    Description: Public Git repository cloned by EC2 web servers.
+    Description: Temporary S3 bucket containing the frontend deployment artifact.
 
-  RepositoryBranch:
+  FrontendArtifactKey:
     Type: String
-    Default: main
-    Description: Git branch checked out by EC2 web servers.
+    Description: S3 object key for the frontend deployment artifact.
 
   CloudFrontOriginPrefixListId:
     Type: String
@@ -39,6 +37,14 @@ Parameters:
     Type: String
     Default: ""
     Description: Optional SES-verified sender email address used by the notifier Lambda.
+
+  UseMockData:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether the verifier Lambda should use mock GeoNet earthquake data.
 
 
 Conditions:
@@ -245,6 +251,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
+                  - dynamodb:Query
                 Resource:
                   - !GetAtt ReportsTable.Arn
 
@@ -367,6 +374,46 @@ Resources:
                   - dynamodb:PutItem
                 Resource:
                   - !GetAtt UsersTable.Arn
+
+
+  # ------------------------------------------------
+  # IAM - EC2 role
+  # ------------------------------------------------
+
+  WebServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DeploymentPrefix}-WebServerRole"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      Policies:
+        - PolicyName: DYFT-WebServer-FrontendArtifactRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${FrontendArtifactBucket}/${FrontendArtifactKey}"
+
+
+  WebServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${DeploymentPrefix}-WebServerInstanceProfile"
+      Roles:
+        - !Ref WebServerRole
+
 
   SchedulerInvokeRole:
     Type: AWS::IAM::Role
@@ -506,7 +553,7 @@ Resources:
           DB_TABLE_NAME: !Ref ReportsTable
           QUEUE_URL: !Ref NotificationQueue
           LOOKBACK_MINUTES: "60"
-          USE_MOCK_DATA: "true"
+          USE_MOCK_DATA: !Ref UseMockData
 
       Code:
         ZipFile: |
@@ -903,10 +950,12 @@ Resources:
     DependsOn:
       - PublicDefaultRoute
       - PublicSubnet1RouteTableAssociation
+      - WebServerInstanceProfile
     Properties:
       ImageId: !Ref WebServerAmiId
       InstanceType: t3.micro
       SubnetId: !Ref PublicSubnet1
+      IamInstanceProfile: !Ref WebServerInstanceProfile
 
       SecurityGroupIds:
         - !Ref Ec2SecurityGroup
@@ -921,12 +970,14 @@ Resources:
           set -euxo pipefail
 
           dnf update -y
-          dnf install -y git nginx
+          dnf install -y nginx unzip
 
           dnf install -y nodejs22 nodejs22-npm
 
           rm -rf /home/ec2-user/dyft-compx527
-          git clone --branch ${RepositoryBranch} --single-branch ${RepositoryUrl} /home/ec2-user/dyft-compx527
+          mkdir -p /home/ec2-user/dyft-compx527
+          aws s3 cp s3://${FrontendArtifactBucket}/${FrontendArtifactKey} /tmp/frontend-source.zip --region ${AWS::Region}
+          unzip -q /tmp/frontend-source.zip -d /home/ec2-user/dyft-compx527
           chown -R ec2-user:ec2-user /home/ec2-user/dyft-compx527
 
           cd /home/ec2-user/dyft-compx527/frontend
@@ -957,10 +1008,12 @@ Resources:
     DependsOn:
       - PublicDefaultRoute
       - PublicSubnet2RouteTableAssociation
+      - WebServerInstanceProfile
     Properties:
       ImageId: !Ref WebServerAmiId
       InstanceType: t3.micro
       SubnetId: !Ref PublicSubnet2
+      IamInstanceProfile: !Ref WebServerInstanceProfile
 
       SecurityGroupIds:
         - !Ref Ec2SecurityGroup
@@ -975,12 +1028,14 @@ Resources:
           set -euxo pipefail
 
           dnf update -y
-          dnf install -y git nginx
+          dnf install -y nginx unzip
 
           dnf install -y nodejs22 nodejs22-npm
 
           rm -rf /home/ec2-user/dyft-compx527
-          git clone --branch ${RepositoryBranch} --single-branch ${RepositoryUrl} /home/ec2-user/dyft-compx527
+          mkdir -p /home/ec2-user/dyft-compx527
+          aws s3 cp s3://${FrontendArtifactBucket}/${FrontendArtifactKey} /tmp/frontend-source.zip --region ${AWS::Region}
+          unzip -q /tmp/frontend-source.zip -d /home/ec2-user/dyft-compx527
           chown -R ec2-user:ec2-user /home/ec2-user/dyft-compx527
 
           cd /home/ec2-user/dyft-compx527/frontend
