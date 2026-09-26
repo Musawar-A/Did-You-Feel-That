@@ -76,7 +76,7 @@ function MainPage() {
   const [showAlreadyReported, setShowAlreadyReported] = useState(false);
 
   // Remembers that the user has successfully submitted a report.
-  // This remains true even if a later click is rejected with 429.
+  // This stays true even when a later click is rejected with 429.
   const [hasReported, setHasReported] = useState(false);
 
   // Keeps track of the warning timer so we can cancel an old timer
@@ -112,18 +112,19 @@ function MainPage() {
     };
   }, []);
 
-  // Shows the temporary "already registered" warning.
+  // Shows the "already reported" warning and hides it again
+  // after two seconds.
   const showAlreadyReportedWarning = () => {
-    // Cancel an existing timer first.
+    // Cancel any existing timer first.
     // This prevents multiple timers from fighting over the same state.
     if (hideWarningTimeoutRef.current) {
       clearTimeout(hideWarningTimeoutRef.current);
     }
 
-    // Show the warning.
+    // Show the warning message.
     setShowAlreadyReported(true);
 
-    // Hide the warning after 2 seconds.
+    // Hide the warning after two seconds.
     hideWarningTimeoutRef.current = setTimeout(() => {
       setShowAlreadyReported(false);
       hideWarningTimeoutRef.current = null;
@@ -147,7 +148,7 @@ function MainPage() {
       // Lock the submission while the backend processes it.
       setIsSubmitting(true);
 
-      // Hide any previous warning before processing this click.
+      // Hide an old warning before processing this click.
       setShowAlreadyReported(false);
 
       // Add a small random offset to protect the user's exact location.
@@ -166,7 +167,8 @@ function MainPage() {
         reportLocation.longitude,
       );
 
-      // These logs help us see exactly what the backend returned.
+      // These logs make it easier to see what the backend returned
+      // while testing the application.
       console.log("========== REPORT RESPONSE ==========");
       console.log("Status code:", result?.statusCode);
       console.log("Response body:", result?.body);
@@ -181,6 +183,7 @@ function MainPage() {
         );
 
         // Show the temporary warning.
+        // The previous report result remains underneath it.
         showAlreadyReportedWarning();
 
         // Do not add another red dot because this report
@@ -199,13 +202,15 @@ function MainPage() {
       // confirms that the report was successfully registered.
       setFeltReports((reports) => [...reports, reportLocation]);
 
-      // Store nearby reports returned by the backend.
+      // Store the nearby reports returned by the backend.
       setNearbyReports(data?.nearbyReports || []);
 
       // Store the number of nearby reports returned by the backend.
       setNearbyReportCount(data?.nearbyReportCount || 0);
 
       // Remember that the user has successfully submitted a report.
+      // This allows the report result to remain visible after
+      // the temporary 429 warning disappears.
       setHasReported(true);
 
       console.log("Report successfully registered.");
@@ -264,8 +269,8 @@ function MainPage() {
           nearbyReports={nearbyReports}
         />
 
-        {/* Show the temporary warning when the backend returns 429.
-            The warning disappears automatically after 2 seconds. */}
+        {/* Show the 429 warning in the same position and size
+            as the report-count message. It sits on top while visible. */}
         {showAlreadyReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
@@ -278,10 +283,13 @@ function MainPage() {
           </div>
         )}
 
-        {/* Keep the successful report result visible.
-            The temporary 429 warning does not hide this message. */}
+        {/* Keep the successful report result in the same position
+            and same size as the warning above.
+            The warning has a higher z-index, so it temporarily covers
+            this message. When the warning disappears, this message
+            becomes visible again automatically. */}
         {hasReported && (
-          <div className="auto-hide-message absolute top-36 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
+          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[999] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
               {nearbyReportCount === 0 ? (
                 <span className="text-xl font-bold">
