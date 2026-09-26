@@ -31,7 +31,7 @@ async function submitReport(latitude, longitude) {
   );
 
   // Read the response even when the backend returns an error.
-  // This allows us to handle responses such as HTTP 429.
+  // This lets us handle responses such as HTTP 429 properly.
   const responseText = await response.text();
 
   let responseData;
@@ -59,7 +59,7 @@ function MainPage() {
   // Makes the "I FELT THAT" button look pressed while clicking it.
   const [isPressed, setIsPressed] = useState(false);
 
-  // Stores reports successfully submitted by this user.
+  // Stores reports that were successfully submitted by this user.
   const [feltReports, setFeltReports] = useState([]);
 
   // Stores nearby reports returned by the backend.
@@ -68,19 +68,19 @@ function MainPage() {
   // Stores the number of nearby reports returned by the backend.
   const [nearbyReportCount, setNearbyReportCount] = useState(0);
 
-  // Prevents another request while the current request is processing.
+  // Prevents another request while the current request is still processing.
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Controls the temporary message shown when the backend
+  // Controls the temporary warning shown when the backend
   // says the user has already reported within 15 minutes.
   const [showAlreadyReported, setShowAlreadyReported] = useState(false);
 
   // Remembers that the user has successfully submitted a report.
-  // This stays true even if a later click is rejected with 429.
+  // This remains true even if a later click is rejected with 429.
   const [hasReported, setHasReported] = useState(false);
 
-  // Keeps track of the warning timer so we can cancel it
-  // before starting another one.
+  // Keeps track of the warning timer so we can cancel an old timer
+  // before starting a new one.
   const hideWarningTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -112,6 +112,24 @@ function MainPage() {
     };
   }, []);
 
+  // Shows the temporary "already registered" warning.
+  const showAlreadyReportedWarning = () => {
+    // Cancel an existing timer first.
+    // This prevents multiple timers from fighting over the same state.
+    if (hideWarningTimeoutRef.current) {
+      clearTimeout(hideWarningTimeoutRef.current);
+    }
+
+    // Show the warning.
+    setShowAlreadyReported(true);
+
+    // Hide the warning after 2 seconds.
+    hideWarningTimeoutRef.current = setTimeout(() => {
+      setShowAlreadyReported(false);
+      hideWarningTimeoutRef.current = null;
+    }, 2000);
+  };
+
   const handleFeltThat = async () => {
     // We need the user's location before creating a report.
     if (!userLocation) {
@@ -129,7 +147,7 @@ function MainPage() {
       // Lock the submission while the backend processes it.
       setIsSubmitting(true);
 
-      // Hide any previous 429 warning before processing this click.
+      // Hide any previous warning before processing this click.
       setShowAlreadyReported(false);
 
       // Add a small random offset to protect the user's exact location.
@@ -155,31 +173,18 @@ function MainPage() {
 
       const data = result?.body;
 
-      // The backend returns 429 when this user has already
-      // submitted a report within the last 15 minutes.
+      // HTTP 429 means the backend has rejected this report
+      // because the user already reported within the last 15 minutes.
       if (result?.statusCode === 429) {
         console.log(
           "Report rejected: user already reported within the last 15 minutes.",
         );
 
-        // Show the temporary warning message.
-        setShowAlreadyReported(true);
+        // Show the temporary warning.
+        showAlreadyReportedWarning();
 
-        // Cancel any previous warning timer before starting
-        // a new one. This prevents multiple timers from
-        // fighting with each other.
-        if (hideWarningTimeoutRef.current) {
-          clearTimeout(hideWarningTimeoutRef.current);
-        }
-
-        // Hide the warning after 2.5 seconds.
-        hideWarningTimeoutRef.current = setTimeout(() => {
-          setShowAlreadyReported(false);
-          hideWarningTimeoutRef.current = null;
-        }, 2500);
-
-        // The backend rejected this report, so do not add
-        // another report marker or change the existing report data.
+        // Do not add another red dot because this report
+        // was rejected by the backend.
         return;
       }
 
@@ -194,13 +199,13 @@ function MainPage() {
       // confirms that the report was successfully registered.
       setFeltReports((reports) => [...reports, reportLocation]);
 
-      // Store the nearby reports returned by the backend.
+      // Store nearby reports returned by the backend.
       setNearbyReports(data?.nearbyReports || []);
 
       // Store the number of nearby reports returned by the backend.
       setNearbyReportCount(data?.nearbyReportCount || 0);
 
-      // Remember that the user has successfully reported.
+      // Remember that the user has successfully submitted a report.
       setHasReported(true);
 
       console.log("Report successfully registered.");
@@ -260,7 +265,7 @@ function MainPage() {
         />
 
         {/* Show the temporary warning when the backend returns 429.
-            The warning automatically disappears after 2.5 seconds. */}
+            The warning disappears automatically after 2 seconds. */}
         {showAlreadyReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
@@ -274,7 +279,7 @@ function MainPage() {
         )}
 
         {/* Keep the successful report result visible.
-            The 429 warning does not hide this message. */}
+            The temporary 429 warning does not hide this message. */}
         {hasReported && (
           <div className="auto-hide-message absolute top-36 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
