@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import MapView from "../components/MapView";
 
@@ -36,16 +36,16 @@ async function submitReport(latitude, longitude) {
 
   let responseData;
 
-  // The backend normally returns JSON, so convert the response
-  // into a JavaScript object when possible.
+  // The backend normally returns JSON, so convert it into
+  // a JavaScript object when possible.
   try {
     responseData = JSON.parse(responseText);
   } catch {
-    // If the backend sends plain text instead, keep it as text.
+    // If the backend returns plain text instead, keep it as text.
     responseData = responseText;
   }
 
-  // Return the status code and the backend response together.
+  // Return both the status code and the backend response.
   return {
     statusCode: response.status,
     body: responseData,
@@ -59,7 +59,7 @@ function MainPage() {
   // Makes the "I FELT THAT" button look pressed while clicking it.
   const [isPressed, setIsPressed] = useState(false);
 
-  // Stores reports that were successfully submitted by this user.
+  // Stores reports successfully submitted by this user.
   const [feltReports, setFeltReports] = useState([]);
 
   // Stores nearby reports returned by the backend.
@@ -68,7 +68,7 @@ function MainPage() {
   // Stores the number of nearby reports returned by the backend.
   const [nearbyReportCount, setNearbyReportCount] = useState(0);
 
-  // Prevents another request while the current request is still processing.
+  // Prevents another request while the current request is processing.
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Controls the temporary message shown when the backend
@@ -76,8 +76,12 @@ function MainPage() {
   const [showAlreadyReported, setShowAlreadyReported] = useState(false);
 
   // Remembers that the user has successfully submitted a report.
-  // This stays true even if a later report is rejected with HTTP 429.
+  // This stays true even if a later click is rejected with 429.
   const [hasReported, setHasReported] = useState(false);
+
+  // Keeps track of the warning timer so we can cancel it
+  // before starting another one.
+  const hideWarningTimeoutRef = useRef(null);
 
   useEffect(() => {
     // Ask the browser for permission to use the user's location.
@@ -96,6 +100,16 @@ function MainPage() {
         console.log("Could not get location:", error);
       },
     );
+  }, []);
+
+  useEffect(() => {
+    // Clear the warning timer if the page is closed
+    // or this component is removed.
+    return () => {
+      if (hideWarningTimeoutRef.current) {
+        clearTimeout(hideWarningTimeoutRef.current);
+      }
+    };
   }, []);
 
   const handleFeltThat = async () => {
@@ -141,8 +155,8 @@ function MainPage() {
 
       const data = result?.body;
 
-      // If the backend returns 429, it means this user has
-      // already submitted a report within the last 15 minutes.
+      // The backend returns 429 when this user has already
+      // submitted a report within the last 15 minutes.
       if (result?.statusCode === 429) {
         console.log(
           "Report rejected: user already reported within the last 15 minutes.",
@@ -151,14 +165,21 @@ function MainPage() {
         // Show the temporary warning message.
         setShowAlreadyReported(true);
 
+        // Cancel any previous warning timer before starting
+        // a new one. This prevents multiple timers from
+        // fighting with each other.
+        if (hideWarningTimeoutRef.current) {
+          clearTimeout(hideWarningTimeoutRef.current);
+        }
+
         // Hide the warning after 2.5 seconds.
-        // The backend still controls the actual 15-minute restriction.
-        setTimeout(() => {
+        hideWarningTimeoutRef.current = setTimeout(() => {
           setShowAlreadyReported(false);
+          hideWarningTimeoutRef.current = null;
         }, 2500);
 
-        // Do not add another red dot because this report
-        // was rejected by the backend.
+        // The backend rejected this report, so do not add
+        // another report marker or change the existing report data.
         return;
       }
 
@@ -180,12 +201,12 @@ function MainPage() {
       setNearbyReportCount(data?.nearbyReportCount || 0);
 
       // Remember that the user has successfully reported.
-      // This remains true even if a later click gets a 429 response.
       setHasReported(true);
 
       console.log("Report successfully registered.");
     } catch (error) {
-      // Handle unexpected problems such as network or authentication errors.
+      // Handle unexpected problems such as network
+      // or authentication errors.
       console.error("Could not submit earthquake report:", error);
     } finally {
       // The request has finished, so another request can be attempted.
@@ -238,8 +259,8 @@ function MainPage() {
           nearbyReports={nearbyReports}
         />
 
-        {/* Show the temporary warning when the backend returns HTTP 429.
-            This message disappears after 2.5 seconds. */}
+        {/* Show the temporary warning when the backend returns 429.
+            The warning automatically disappears after 2.5 seconds. */}
         {showAlreadyReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
@@ -252,10 +273,8 @@ function MainPage() {
           </div>
         )}
 
-        {/* Keep showing the successful report result.
-            This does not depend on showAlreadyReported, so the
-            previous result remains available when a later click
-            is rejected with HTTP 429. */}
+        {/* Keep the successful report result visible.
+            The 429 warning does not hide this message. */}
         {hasReported && (
           <div className="auto-hide-message absolute top-36 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
