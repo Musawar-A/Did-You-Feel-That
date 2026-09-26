@@ -15,6 +15,7 @@ Default:
 Optional:
   OPERATIONS_ALERT_EMAIL    Optional SNS email subscription for CloudWatch alarms.
   SES_SENDER_EMAIL          Optional SES-verified sender used by notification emails.
+  USE_MOCK_DATA             Optional verifier data source toggle: true or false. Default: true.
 
 Example:
   ./deploy.sh
@@ -32,6 +33,7 @@ REGION="us-east-1"
 TEMPLATE="${TEMPLATE:-infrastructure/cloudformation/dyft.yml}"
 OPERATIONS_ALERT_EMAIL="${OPERATIONS_ALERT_EMAIL:-}"
 SES_SENDER_EMAIL="${SES_SENDER_EMAIL:-}"
+USE_MOCK_DATA="${USE_MOCK_DATA:-true}"
 DEPLOYMENT_DIR=".deployment"
 FRONTEND_ARTIFACT_ZIP="$DEPLOYMENT_DIR/frontend-source.zip"
 ARTIFACT_KEY="frontend-source.zip"
@@ -158,6 +160,11 @@ if [[ ! -f frontend/package.json || ! -f frontend/package-lock.json ]]; then
   exit 1
 fi
 
+if [[ "$USE_MOCK_DATA" != "true" && "$USE_MOCK_DATA" != "false" ]]; then
+  echo "Error: USE_MOCK_DATA must be either true or false." >&2
+  exit 1
+fi
+
 echo "======================================"
 echo "Deploying DYFT infrastructure"
 echo "Stack:  $STACK_NAME"
@@ -230,6 +237,7 @@ aws cloudformation deploy \
     CloudFrontOriginPrefixListId="$CLOUDFRONT_ORIGIN_PREFIX_LIST_ID" \
     OperationsAlertEmail="$OPERATIONS_ALERT_EMAIL" \
     SesSenderEmail="$SES_SENDER_EMAIL" \
+    UseMockData="$USE_MOCK_DATA" \
     FrontendArtifactBucket="$ARTIFACT_BUCKET" \
     FrontendArtifactKey="$ARTIFACT_KEY"
 

@@ -64,7 +64,11 @@ These environment variables are optional:
 
 For testing DYFT notification emails, register the DYFT account with the same verified email address supplied as `SES_SENDER_EMAIL`. Using the same email for `OPERATIONS_ALERT_EMAIL` and `SES_SENDER_EMAIL` is the simplest testing setup, but both variables remain independently optional.
 
-**NOTE:** Either verification link can go to the Spam folder.
+**NOTE:** Either verification link can go to the Spam.
+
+### Optional Verifier Data Source
+
+Mock earthquake data is enabled by default for assignment testing:
 
 ## Deploy
 
@@ -90,9 +94,10 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-OR With optional email settings:
+OR With optional settings:
 
 ```bash
+USE_MOCK_DATA=false \
 OPERATIONS_ALERT_EMAIL="your-email@example.com" \
 SES_SENDER_EMAIL="your-email@example.com" \
 ./deploy.sh

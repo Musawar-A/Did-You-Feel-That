@@ -38,6 +38,14 @@ Parameters:
     Default: ""
     Description: Optional SES-verified sender email address used by the notifier Lambda.
 
+  UseMockData:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether the verifier Lambda should use mock GeoNet earthquake data.
+
 
 Conditions:
 
@@ -545,7 +553,7 @@ Resources:
           DB_TABLE_NAME: !Ref ReportsTable
           QUEUE_URL: !Ref NotificationQueue
           LOOKBACK_MINUTES: "60"
-          USE_MOCK_DATA: "true"
+          USE_MOCK_DATA: !Ref UseMockData
 
       Code:
         ZipFile: |
