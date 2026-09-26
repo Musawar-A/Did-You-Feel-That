@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import MapView from "../components/MapView";
 
-// Sends the earthquake report to the backend.
+// Sends the user's earthquake report to API Gateway.
 async function submitReport(latitude, longitude) {
-  // Get the user's current Cognito login session.
+  // Get the login token from the current Cognito session.
   const { tokens } = await fetchAuthSession();
 
   const idToken = tokens?.idToken?.toString();
 
-  // A report cannot be submitted unless the user is logged in.
+  // The report cannot be submitted if the user is not logged in.
   if (!idToken) {
     throw new Error("User is not authenticated");
   }
@@ -30,14 +30,14 @@ async function submitReport(latitude, longitude) {
     },
   );
 
-  // Read the response even when the backend returns an error.
-  // This lets us handle responses such as HTTP 429 properly.
+  // Read the response so we can handle both successful
+  // responses and backend errors such as HTTP 429.
   const responseText = await response.text();
 
   let responseData;
 
-  // The backend normally returns JSON, so convert it into
-  // a JavaScript object when possible.
+  // The backend normally returns JSON, so convert the response
+  // into a JavaScript object when possible.
   try {
     responseData = JSON.parse(responseText);
   } catch {
@@ -45,7 +45,8 @@ async function submitReport(latitude, longitude) {
     responseData = responseText;
   }
 
-  // Return both the status code and the backend response.
+  // Return the status code and response body so the page
+  // can decide how to handle the result.
   return {
     statusCode: response.status,
     body: responseData,
@@ -56,41 +57,39 @@ function MainPage() {
   // Stores the user's current browser location.
   const [userLocation, setUserLocation] = useState(null);
 
-  // Makes the "I FELT THAT" button look pressed while clicking it.
+  // Gives the "I FELT THAT" button a pressed appearance.
   const [isPressed, setIsPressed] = useState(false);
 
-  // Stores reports that were successfully submitted by this user.
+  // Stores the user's own reports displayed on the map.
   const [feltReports, setFeltReports] = useState([]);
 
-  // Stores nearby reports returned by the backend.
+  // Stores nearby reports returned by Lambda.
   const [nearbyReports, setNearbyReports] = useState([]);
 
-  // Stores the number of nearby reports returned by the backend.
+  // Stores the number of nearby reports returned by Lambda.
   const [nearbyReportCount, setNearbyReportCount] = useState(0);
 
-  // Prevents another request while the current request is still processing.
+  // Prevents another request while the first request is still processing.
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Controls the temporary warning shown when the backend
-  // says the user has already reported within 15 minutes.
+  // Controls the "already registered" message.
   const [showAlreadyReported, setShowAlreadyReported] = useState(false);
 
-  // Remembers that the user has successfully submitted a report.
-  // This stays true even when a later click is rejected with 429.
+  // Tracks whether the user has submitted a report during this page session.
   const [hasReported, setHasReported] = useState(false);
 
-  // Keeps track of the warning timer so we can cancel an old timer
-  // before starting a new one.
+  // Keeps the warning timer so it can be cancelled before
+  // another timer is started.
   const hideWarningTimeoutRef = useRef(null);
 
   useEffect(() => {
-    // Ask the browser for permission to use the user's location.
+    // Ask the browser for permission to access the user's location.
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
 
-        // Save the current location so it can be shown on the map.
+        // Save the actual browser location.
         setUserLocation({
           latitude,
           longitude,
@@ -103,8 +102,8 @@ function MainPage() {
   }, []);
 
   useEffect(() => {
-    // Clear the warning timer if the page is closed
-    // or this component is removed.
+    // Clear the warning timer if the page is closed or
+    // the component is removed before the timer finishes.
     return () => {
       if (hideWarningTimeoutRef.current) {
         clearTimeout(hideWarningTimeoutRef.current);
@@ -112,19 +111,17 @@ function MainPage() {
     };
   }, []);
 
-  // Shows the "already reported" warning and hides it again
-  // after two seconds.
+  // Shows the temporary warning and makes sure an older
+  // warning timer cannot interfere with the new one.
   const showAlreadyReportedWarning = () => {
-    // Cancel any existing timer first.
-    // This prevents multiple timers from fighting over the same state.
     if (hideWarningTimeoutRef.current) {
       clearTimeout(hideWarningTimeoutRef.current);
     }
 
-    // Show the warning message.
     setShowAlreadyReported(true);
 
-    // Hide the warning after two seconds.
+    // The backend controls the 15-minute restriction.
+    // This timer only controls how long the message is visible.
     hideWarningTimeoutRef.current = setTimeout(() => {
       setShowAlreadyReported(false);
       hideWarningTimeoutRef.current = null;
@@ -132,27 +129,25 @@ function MainPage() {
   };
 
   const handleFeltThat = async () => {
-    // We need the user's location before creating a report.
+    // Make sure the user's location is available first.
     if (!userLocation) {
       console.log("User location is not available yet.");
       return;
     }
 
-    // Do not send another request while the current request
-    // is still being processed.
+    // Stop a second click while the first report is still being submitted.
     if (isSubmitting) {
       return;
     }
 
     try {
-      // Lock the submission while the backend processes it.
+      // Lock the button while the report is being processed.
       setIsSubmitting(true);
 
-      // Hide an old warning before processing this click.
+      // Hide an old warning before processing the new click.
       setShowAlreadyReported(false);
 
-      // Add a small random offset to protect the user's exact location.
-      // The actual browser location is not sent directly to the backend.
+      // Add a random offset to protect the user's exact location.
       const latitudeOffset = (Math.random() - 0.5) * 0.05;
       const longitudeOffset = (Math.random() - 0.5) * 0.05;
 
@@ -161,29 +156,30 @@ function MainPage() {
         longitude: userLocation.longitude + longitudeOffset,
       };
 
-      // Send the privacy-adjusted location to the backend.
+      // Send the offset coordinates to the backend.
       const result = await submitReport(
         reportLocation.latitude,
         reportLocation.longitude,
       );
 
-      // These logs make it easier to see what the backend returned
-      // while testing the application.
+      // Display the complete response from Lambda while testing.
       console.log("========== REPORT RESPONSE ==========");
-      console.log("Status code:", result?.statusCode);
+      console.log("Full response:", result);
       console.log("Response body:", result?.body);
+      console.log("Response body type:", typeof result?.body);
+      console.log("Status code:", result?.statusCode);
 
       const data = result?.body;
 
-      // HTTP 429 means the backend has rejected this report
-      // because the user already reported within the last 15 minutes.
+      // The backend returns 429 when the user has already
+      // submitted a report within the last 15 minutes.
       if (result?.statusCode === 429) {
         console.log(
-          "Report rejected: user already reported within the last 15 minutes.",
+          "Report blocked: You have already submitted a report within the last 15 minutes",
         );
 
-        // Show the temporary warning.
-        // The previous report result remains underneath it.
+        // Show the warning for two seconds.
+        // The report result underneath stays available.
         showAlreadyReportedWarning();
 
         // Do not add another red dot because this report
@@ -198,25 +194,21 @@ function MainPage() {
         return;
       }
 
-      // Only add the new report marker after the backend
-      // confirms that the report was successfully registered.
+      // Show the offset report location on the map.
       setFeltReports((reports) => [...reports, reportLocation]);
 
-      // Store the nearby reports returned by the backend.
+      // Store the nearby reports so they can be displayed on the map.
       setNearbyReports(data?.nearbyReports || []);
 
-      // Store the number of nearby reports returned by the backend.
+      // Store the number returned by Lambda.
       setNearbyReportCount(data?.nearbyReportCount || 0);
 
-      // Remember that the user has successfully submitted a report.
-      // This allows the report result to remain visible after
-      // the temporary 429 warning disappears.
+      // The user has successfully submitted a report.
       setHasReported(true);
 
       console.log("Report successfully registered.");
     } catch (error) {
-      // Handle unexpected problems such as network
-      // or authentication errors.
+      // If something fails, allow the user to try again.
       console.error("Could not submit earthquake report:", error);
     } finally {
       // The request has finished, so another request can be attempted.
@@ -226,7 +218,7 @@ function MainPage() {
 
   return (
     <main className="min-h-screen bg-gray-100">
-      {/* Page heading and earthquake report button. */}
+      {/* Page heading and report button. */}
       <div className="px-6 py-5">
         <h2 className="text-2xl font-semibold text-gray-900">
           Earthquakes Near You
@@ -236,7 +228,7 @@ function MainPage() {
           Click the button if you felt an earthquake.
         </p>
 
-        {/* Main button used to submit an earthquake report. */}
+        {/* Lets the user submit an earthquake report. */}
         <button
           onClick={handleFeltThat}
           onPointerDown={() => setIsPressed(true)}
@@ -261,7 +253,7 @@ function MainPage() {
         </button>
       </div>
 
-      {/* Map and temporary information messages. */}
+      {/* Map and floating information messages. */}
       <div className="h-[600px] w-full relative">
         <MapView
           userLocation={userLocation}
@@ -269,8 +261,8 @@ function MainPage() {
           nearbyReports={nearbyReports}
         />
 
-        {/* Show the 429 warning in the same position and size
-            as the report-count message. It sits on top while visible. */}
+        {/* Tell the user when another report cannot be submitted yet.
+            This warning appears temporarily when Lambda returns 429. */}
         {showAlreadyReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
@@ -283,11 +275,9 @@ function MainPage() {
           </div>
         )}
 
-        {/* Keep the successful report result in the same position
-            and same size as the warning above.
-            The warning has a higher z-index, so it temporarily covers
-            this message. When the warning disappears, this message
-            becomes visible again automatically. */}
+        {/* Show the number of people who felt the earthquake.
+            This stays in the same position as the warning above,
+            so the warning temporarily covers it and then disappears. */}
         {hasReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[999] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
@@ -315,7 +305,7 @@ function MainPage() {
         )}
       </div>
 
-      {/* Explain why report markers do not show exact user locations. */}
+      {/* Privacy note explaining why report markers are not exact locations. */}
       <p className="text-sm text-gray-500 text-center px-6 py-3">
         Locations are shown with an offset and will not represent the actual
         location of other users&apos; reports.
