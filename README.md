@@ -2,7 +2,7 @@
 
 ## DYFT Team
 
-- **Musawar Ahmad (1629548)** - Group Leader and IAM Role and Policies management
+- **Musawar Ahmad (1629548)** - Group Leader, IAM, Elastic Load Balancing, CloudWatch, Automation
 - **Ernest Divina (1627071)** - Cognito and User management, Backend: Cognito Lambda, and Frontend: part user login/registration pages with Mohammad
 - **Charles Gerard Serrato (1625871)** - Backend: Verifier Lambda, EventBridge, GeoNet API, part of Ingestion Lambda
 - **Jed Thomson (1709677)** - Backend: Notifier Lambda, DynamoDB, SQS, SES, Backend Ingestion
@@ -44,63 +44,81 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 ## Deployment Instructions
 
-Deploy from a cloned repository with AWS CLI credentials for the target account.
-
-```bash
-./deploy.sh
-```
+Deploy from the repository with AWS CLI credentials for the target account.
 
 ### Prerequisites
 
 - AWS CLI authenticated in the user's AWS account.
-- Bash.
-- `zip`.
+- Must use Bash.
+- Must have `zip` installed.
 - Permission to create and manage the AWS resources defined by the stack.
 - Permission to create named IAM roles because the deployment uses `CAPABILITY_NAMED_IAM`.
 - Deployment region is fixed to `us-east-1`.
-- `deploy.sh` automatically discovers the AWS-managed `com.amazonaws.global.cloudfront.origin-facing` prefix list using the AWS CLI. You do not need to provide the prefix-list ID manually.
-
-### AWS CLI Authentication
-
-If not already authenticated:
-
-```bash
-aws configure
-aws sts get-caller-identity
-```
 
 ### Optional Email Settings
 
 These environment variables are optional:
 
-- `OPERATIONS_ALERT_EMAIL`: Subscribes an email address to the SNS topic used by CloudWatch alarms. The SNS subscription email must be confirmed.
-- `SES_SENDER_EMAIL`: Provides the SES-verified sender used by notification emails. If used for actual email delivery, it must satisfy the SES verification and account requirements for the deployer's AWS account.
+- `OPERATIONS_ALERT_EMAIL`: Subscribes an email address to the SNS topic used by CloudWatch alarms. AWS sends an SNS subscription confirmation email, and the user must confirm it. You may receive an initial alarm notification for Unhealthy EC2 targets, however this is only because deployment takes a while and can exceed the alarm threshold period.
+- `SES_SENDER_EMAIL`: Sets the sender address for DYFT earthquake/report verification notification emails. When provided, `deploy.sh` automatically initiates SES email identity verification, AWS sends a verification email to that address, and the script waits for the sender to become verified before continuing.
 
-### Deploy
+For testing DYFT notification emails, register the DYFT account with the same verified email address supplied as `SES_SENDER_EMAIL`. Using the same email for `OPERATIONS_ALERT_EMAIL` and `SES_SENDER_EMAIL` is the simplest testing setup, but both variables remain independently optional.
+
+**NOTE:** Either verification link can go to the Spam folder.
+
+## Deploy
 
 From the repository root:
 
-1. If needed, make the script executable:
+#### 1. AWS CLI Authentication
+
+Verify that the AWS CLI is authenticated:
+
+```bash
+aws sts get-caller-identity
+```
+
+#### 2. **Make the script executable:**
 
 ```bash
 chmod +x deploy.sh
 ```
 
-2. Run the automated deployment:
+#### 3. **Run the automated deployment:**
 
 ```bash
 ./deploy.sh
 ```
 
-With optional email settings:
+OR With optional email settings:
 
 ```bash
-OPERATIONS_ALERT_EMAIL="alerts@example.com" \
-SES_SENDER_EMAIL="alerts@example.com" \
+OPERATIONS_ALERT_EMAIL="your-email@example.com" \
+SES_SENDER_EMAIL="your-email@example.com" \
 ./deploy.sh
 ```
+
+When `SES_SENDER_EMAIL` is supplied, keep the inbox open and click the AWS SES verification link when it arrives. The deployment waits up to about 5 minutes for verification before continuing.
 
 NOTE: CloudFront creation, updates, and deletion can take some time to complete.
+
+#### 4. **Get Application URL**
+
+`deploy.sh` prints the stack outputs and the frontend URL at the end. Copy  `Frontend URL` from the CLI and paste into a browser. The URL looks like this:
+
+```text
+https://dxxxxxxxxxxxx.cloudfront.net
+```
+
+To fetch the URL again:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name dyft-auto-compx527 \
+  --region us-east-1 \
+  --query "Stacks[0].Outputs" \
+  --output table
+```
 
 At a high level, the script:
 
@@ -111,47 +129,12 @@ At a high level, the script:
 - prints the CloudFormation outputs and frontend URL
 
 
-### Get Outputs
-
-`deploy.sh` prints the stack outputs and the frontend URL at the end. Open the printed CloudFront `Frontend URL` in your browser, for example:
-
-```text
-https://dxxxxxxxxxxxx.cloudfront.net
-```
-
-To fetch the outputs again:
-
-```bash
-aws cloudformation describe-stacks \
-  --stack-name dyft-auto-compx527 \
-  --region us-east-1 \
-  --query "Stacks[0].Outputs" \
-  --output table
-```
-
-### HTTPS, Network Path, and CORS
-
-The frontend network path is:
-
-```text
-Browser
-  -> HTTPS
-CloudFront
-  -> HTTP port 80
-Application Load Balancer
-  -> HTTP port 80
-EC2
-```
-
-CloudFront provides the public HTTPS endpoint using its generated `cloudfront.net` domain. The ALB security group allows HTTP port 80 only from the AWS-managed CloudFront origin-facing prefix list. The EC2 security group allows HTTP port 80 only from the ALB security group.
-
-The generated CloudFront HTTPS origin is automatically used for the frontend CORS configuration used by the Lambda/API Gateway resources.
-
-
 ## Remove the automated deployment
 
-Delete the stack:
+Once done, delete the stack:
 
 ```bash
 aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1
+
+aws cloudformation wait stack-delete-complete --stack-name dyft-auto-compx527 --region us-east-1
 ```
