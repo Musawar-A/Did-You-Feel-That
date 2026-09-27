@@ -1,0 +1,32 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ConsumeDYFTNotificationQueue",
+            "Effect": "Allow",
+            "Action": [
+                "sqs:ReceiveMessage",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes"
+            ],
+            "Resource": "arn:aws:sqs:us-east-1:987653905868:DYFT-DidYouQueueThat"
+        },
+        {
+            "Sid": "DynamoDBAccess",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:Scan",
+                "dynamodb:GetItem"
+            ],
+            "Resource": "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-USERS"
+        },
+        {
+            "Sid": "SendDYFTEmail",
+            "Effect": "Allow",
+            "Action": [
+                "ses:SendEmail"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

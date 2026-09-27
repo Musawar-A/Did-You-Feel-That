@@ -1,0 +1,58 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ManageEC2Server",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:RunInstances",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceStatus",
+                "ec2:StartInstances",
+                "ec2:StopInstances",
+                "ec2:RebootInstances",
+                "ec2:TerminateInstances",
+                "ec2:CreateTags",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstanceTypes",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeKeyPairs"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "PassEC2RoleToEC2",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-EC2AppRole",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "ec2.amazonaws.com"
+                }
+            }
+        },
+        {
+            "Sid": "EC2InstanceConnect",
+            "Effect": "Allow",
+            "Action": "ec2-instance-connect:SendSSHPublicKey",
+            "Resource": "arn:aws:ec2:us-east-1:987653905868:instance/i-077561d8665aa66b1"
+        },
+        {
+            "Sid": "DescribeEC2Resources",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeImages",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeNetworkInterfaces"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

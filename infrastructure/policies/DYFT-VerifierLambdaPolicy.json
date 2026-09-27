@@ -1,0 +1,21 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VerifierDynamoDBAccess",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:Scan",
+                "dynamodb:GetItem",
+                "dynamodb:UpdateItem"
+            ],
+            "Resource": "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-REPORTS"
+        },
+        {
+            "Sid": "SendToDYFTQueue",
+            "Effect": "Allow",
+            "Action": "sqs:SendMessage",
+            "Resource": "arn:aws:sqs:us-east-1:987653905868:DYFT-DidYouQueueThat"
+        }
+    ]
+}

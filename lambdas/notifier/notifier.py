@@ -5,14 +5,12 @@ import boto3
 
 LAMBDA_NAME = "DYFT-Notifier"
 
-dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+dynamodb = boto3.resource("dynamodb")
 
 users_table = dynamodb.Table(os.getenv("USERS_TABLE_NAME", "DYFT-USERS"))
+ses_sender_email = os.getenv("SES_SENDER_EMAIL", "")
 
-ses = boto3.client(
-    "ses",
-    region_name="us-east-1"
-)
+ses = boto3.client("ses")
 
 def lambda_handler(event, context):
 
@@ -53,8 +51,13 @@ def lambda_handler(event, context):
                 )
 
             # Send email through SES
+            if not ses_sender_email:
+                raise Exception(
+                    "SES_SENDER_EMAIL is not configured; skipping email notification"
+                )
+
             ses.send_email(
-                Source="alerts@didyoufeelthat.devs.surf",
+                Source=ses_sender_email,
 
                 Destination={
                     "ToAddresses": [email]

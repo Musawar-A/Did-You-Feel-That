@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 
 LAMBDA_NAME = "DYFT-Ingestion"
 TABLE_NAME = os.getenv("REPORTS_TABLE_NAME", "DYFT-REPORTS")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "https://didyoufeelthat.devs.surf")
 
 # DynamoDB
 dynamodb = boto3.resource("dynamodb")
@@ -18,7 +19,7 @@ table = dynamodb.Table(TABLE_NAME)
 # Repeated CORS headers for responses
 CORS_HEADERS = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "https://didyoufeelthat.devs.surf",
+    "Access-Control-Allow-Origin": FRONTEND_ORIGIN,
     "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 }

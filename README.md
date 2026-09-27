@@ -2,7 +2,7 @@
 
 ## DYFT Team
 
-- **Musawar Ahmad (1629548)** - Group Leader and IAM Role and Policies management
+- **Musawar Ahmad (1629548)** - Group Leader, IAM, Elastic Load Balancing, CloudWatch, Automation
 - **Ernest Divina (1627071)** - Cognito and User management, Backend: Cognito Lambda, and Frontend: part user login/registration pages with Mohammad
 - **Charles Gerard Serrato (1625871)** - Backend: Verifier Lambda, EventBridge, GeoNet API, part of Ingestion Lambda
 - **Jed Thomson (1709677)** - Backend: Notifier Lambda, DynamoDB, SQS, SES, Backend Ingestion
@@ -17,8 +17,6 @@ Logged-in users can submit a report at any time by selecting the "I Felt That" b
 Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filtering for earthquakes with a Modified Mercalli Intensity (MMI) rating of 4 or higher. The platform automatically cross-references user submissions against this data. If a report is submitted within 30 minutes of a confirmed quake and falls within a 50 km radius of its epicentre, the system verifies the report and sends an email notification to the user.
 
 ## AWS Architecture
-
-\<insert architecture image here\>
 
 - **Amazon Application Load Balancer**: Distributes incoming application traffic across Amazon EC2 instances to maintain the app's availability and stability.
 
@@ -42,93 +40,82 @@ Every 15 minutes, the system fetches confirmed seismic data from GeoNet, filteri
 
 - **Amazon Cognito**: Manages user sign-up, sign-in, and authentication flows for the web app.
 
+- **Amazon CloudWatch**: Provides dashboards and alarms for operational monitoring.
+
 ## Deployment Instructions
 
-### Prerequisites \& Dependencies
+Deploy from the repository with AWS CLI credentials for the target account.
 
-- **Runtimes**: Python 3.12, Node.js 18+
+### Prerequisites
 
-- **AWS Resources**: AWS CLI configured with appropriate IAM permissions
+- AWS CLI authenticated in the user's AWS account.
+- Must use Bash.
+- Must have `zip` installed.
+- Permission to create and manage the AWS resources defined by the stack.
+- Permission to create named IAM roles because the deployment uses `CAPABILITY_NAMED_IAM`.
+- Deployment region is fixed to `us-east-1`.
 
-- **Python Libraries**: `boto3`, `urllib3`
+### Optional Email Settings
 
+These environment variables are optional:
 
-- AWS CLI installed
-- an existing VPC with two public subnets
-- the project TLS certificate
-- An EC2 AMI containing Nginx, Node.js, npm, Git, and read-only access to the project repository. The provided deployment script uses the project AMI in the group AWS account; deployments in another AWS account must provide an equivalent AMI.
+- `OPERATIONS_ALERT_EMAIL`: Subscribes an email address to the SNS topic used by CloudWatch alarms. AWS sends an SNS subscription confirmation email, and the user must confirm it. You may receive an initial alarm notification for Unhealthy EC2 targets, however this is only because deployment takes a while and can exceed the alarm threshold period.
+- `SES_SENDER_EMAIL`: Sets the sender address for DYFT earthquake/report verification notification emails. When provided, `deploy.sh` automatically initiates SES email identity verification, AWS sends a verification email to that address, and the script waits for the sender to become verified before continuing.
 
+For testing DYFT notification emails, register the DYFT account with the same verified email address supplied as `SES_SENDER_EMAIL`. Using the same email for `OPERATIONS_ALERT_EMAIL` and `SES_SENDER_EMAIL` is the simplest testing setup, but both variables remain independently optional.
 
+**NOTE:** Either verification link can go to the Spam.
 
+### Optional Verifier Data Source
 
-The deployment is configured for:
+Mock earthquake data is enabled by default for assignment testing:
 
-```text
-Region: us-east-1
+## Deploy
+
+From the repository root:
+
+#### 1. AWS CLI Authentication
+
+Verify that the AWS CLI is authenticated:
+
+```bash
+aws sts get-caller-identity
 ```
 
-
-### Environment Variables
-
-- `DB_TABLE_NAME`: The name of the REPORTS Dynamo DB table. Default is `DYFT-REPORTS`.
-- `LOOKBACK_MINUTES`: Lookback window for fetching quakes and scanning reports. Default is `60`.
-- `USE_MOCK_DATA`: Debug toggle. Forces Lambda to use local test data instead of live GeoNet API. Default is `false`.
-
----
-
-### DynamoDB Schema
-
-The system uses two separate DynamoDB tables to manage user profiles and user reports:
-
-#### `REPORTS` Table
-
-Stores all crowdsourced earthquake report submissions using a Global Secondary Index (GSI) pattern for queries.
-
-- **Primary Key:**
-  - **Partition Key (`PK`):** User identifier (e.g., `USER#user_test_001`).
-  - **Sort Key (`SK`):** Unique report identifier (e.g., `REPORT#01KXYZ`).
-
-- **Global Secondary Index (`GSI1`):**
-  - **Index Partition Key (`GSI1PK`):** Set to `"REPORT"` for all report items (enables batch scanning across all unverified reports).
-  - **Index Sort Key (`GSI1SK`):** ISO-8601 UTC creation timestamp (e.g., `2026-09-17T01:02:39.000Z`).
-
-- **Attributes:**
-  - `entity_type` (String): Fixed to `"REPORT"`.
-  - `latitude` (Number): Geographic latitude of the report location (e.g., `-37.787`).
-  - `longitude` (Number): Geographic longitude of the report location (e.g., `175.304`).
-  - `timestamp` (String): ISO-8601 UTC timestamp of submission.
-  - `verified` (Boolean): Verification flag (`true` or `false`).
-  - `notification` (String): Dispatch status for alerting (`"unsent"`, `"sent"`, or `"error"`).
-  - `mmi_value` (Number / Null): MMI intensity score added upon verification.
-  - `publicID` (String / Null): GeoNet event identifier linked upon verification.
-  - `verified_at` (String / Null): ISO-8601 UTC timestamp set when verified.
-
----
-
-#### `USERS` Table
-
-Stores user profile information and contact details for notifications.
-
-- **Partition Key (`PK`):** Unique user identifier (e.g., `user_test_001`).
-- **Key Attributes:**
-  - `email` (String): User email address for receiving verification alerts.
-  - `name` (String): User display name.
-  - `created_at` (String): ISO-8601 UTC timestamp of account creation.
-
-## Deploy the application
-
-From the repository root, make the deployment script executable:
+#### 2. **Make the script executable:**
 
 ```bash
 chmod +x deploy.sh
 ```
 
-Then deploy:
+#### 3. **Run the automated deployment:**
 
 ```bash
 ./deploy.sh
 ```
-#### Get application URLs and IDs
+
+OR With optional settings:
+
+```bash
+USE_MOCK_DATA=false \
+OPERATIONS_ALERT_EMAIL="your-email@example.com" \
+SES_SENDER_EMAIL="your-email@example.com" \
+./deploy.sh
+```
+
+When `SES_SENDER_EMAIL` is supplied, keep the inbox open and click the AWS SES verification link when it arrives. The deployment waits up to about 5 minutes for verification before continuing.
+
+NOTE: CloudFront creation, updates, and deletion can take some time to complete.
+
+#### 4. **Get Application URL**
+
+`deploy.sh` prints the stack outputs and the frontend URL at the end. Copy  `Frontend URL` from the CLI and paste into a browser. The URL looks like this:
+
+```text
+https://dxxxxxxxxxxxx.cloudfront.net
+```
+
+To fetch the URL again:
 
 ```bash
 aws cloudformation describe-stacks \
@@ -137,10 +124,22 @@ aws cloudformation describe-stacks \
   --query "Stacks[0].Outputs" \
   --output table
 ```
-Use the output value for LoadBalancerDNS to access the project.
 
-### Remove the automated deployment
+At a high level, the script:
+
+- discovers the AWS-managed CloudFront origin-facing prefix-list ID
+- deploys the CloudFormation stack
+- packages and uploads the four Lambda functions
+- waits for the CloudFront distribution to become deployed
+- prints the CloudFormation outputs and frontend URL
+
+
+## Remove the automated deployment
+
+Once done, delete the stack:
 
 ```bash
 aws cloudformation delete-stack --stack-name dyft-auto-compx527 --region us-east-1
+
+aws cloudformation wait stack-delete-complete --stack-name dyft-auto-compx527 --region us-east-1
 ```

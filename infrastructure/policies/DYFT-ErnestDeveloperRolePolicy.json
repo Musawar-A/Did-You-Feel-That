@@ -1,0 +1,163 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ManageCognitoUserPools",
+            "Effect": "Allow",
+            "Action": [
+                "cognito-idp:CreateUserPool",
+                "cognito-idp:DescribeUserPool",
+                "cognito-idp:UpdateUserPool",
+                "cognito-idp:DeleteUserPool",
+                "cognito-idp:ListUserPools",
+                "cognito-idp:ListUserPoolReplicas",
+                "cognito-idp:CreateUserPoolClient",
+                "cognito-idp:DescribeUserPoolClient",
+                "cognito-idp:UpdateUserPoolClient",
+                "cognito-idp:DeleteUserPoolClient",
+                "cognito-idp:ListUserPoolClients",
+                "cognito-idp:ListUsers",
+                "cognito-idp:AdminGetUser",
+                "cognito-idp:AdminDeleteUser",
+                "cognito-idp:AdminDisableUser",
+                "cognito-idp:GetCSVHeader",
+                "cognito-idp:ListUserImportJobs"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ManageProjectLambdaFunctions",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:CreateFunction",
+                "lambda:GetFunction",
+                "lambda:GetFunctionConfiguration",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration",
+                "lambda:InvokeFunction",
+                "lambda:DeleteFunction",
+                "lambda:TagResource",
+                "lambda:UntagResource",
+                "lambda:ListTags"
+            ],
+            "Resource": "arn:aws:lambda:*:987653905868:function:DYFT-*"
+        },
+        {
+            "Sid": "ListLambdaFunctions",
+            "Effect": "Allow",
+            "Action": "lambda:ListFunctions",
+            "Resource": "*"
+        },
+        {
+            "Sid": "ViewLambdaLogs",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogGroups",
+                "logs:DescribeLogStreams",
+                "logs:GetLogEvents",
+                "logs:FilterLogEvents"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ListRolesForLambdaConsole",
+            "Effect": "Allow",
+            "Action": "iam:ListRoles",
+            "Resource": "*"
+        },
+        {
+            "Sid": "ViewDynamoDBTables",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:ListTables",
+                "dynamodb:DescribeTable"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ViewDYFTReportsItems",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:Scan",
+                "dynamodb:GetItem",
+                "dynamodb:Query"
+            ],
+            "Resource": [
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-USERS",
+                "arn:aws:dynamodb:us-east-1:987653905868:table/DYFT-USERS/index/*"
+            ]
+        },
+        {
+            "Sid": "ManageProjectRestApis",
+            "Effect": "Allow",
+            "Action": [
+                "apigateway:POST",
+                "apigateway:PUT",
+                "apigateway:PATCH",
+                "apigateway:DELETE"
+            ],
+            "Resource": [
+                "arn:aws:apigateway:us-east-1::/restapis",
+                "arn:aws:apigateway:us-east-1::/restapis/*"
+            ]
+        },
+        {
+            "Sid": "ViewApiGatewayConsoleSupport",
+            "Effect": "Allow",
+            "Action": "apigateway:GET",
+            "Resource": "*"
+        },
+        {
+            "Sid": "ManageApiGatewayInvocationPermission",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:AddPermission",
+                "lambda:RemovePermission",
+                "lambda:GetPolicy"
+            ],
+            "Resource": "arn:aws:lambda:us-east-1:987653905868:function:DYFT-COGNITO"
+        },
+        {
+            "Sid": "ViewValidationExecutionRole",
+            "Effect": "Allow",
+            "Action": [
+                "iam:GetRole",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies"
+            ],
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-ValidationLambdaRole"
+        },
+        {
+            "Sid": "PassValidationExecutionRoleToLambda",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-ValidationLambdaRole",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "lambda.amazonaws.com"
+                }
+            }
+        },
+        {
+            "Sid": "ViewUserWriteExecutionRole",
+            "Effect": "Allow",
+            "Action": [
+                "iam:GetRole",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies"
+            ],
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-UserWriteLambdaRole"
+        },
+        {
+            "Sid": "PassUserWriteExecutionRoleToLambda",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::987653905868:role/DYFT-UserWriteLambdaRole",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": "lambda.amazonaws.com"
+                }
+            }
+        }
+    ]
+}

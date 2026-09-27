@@ -10,36 +10,134 @@ Parameters:
     Default: DYFT-AUTO
     Description: Prefix used for resources created by the automated test deployment.
 
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: Existing VPC used by DYFT.
-
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet::Id
-    Description: First subnet for the DYFT web server.
-
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet::Id
-    Description: Second subnet for the DYFT web server.
-
   WebServerAmiId:
-    Type: AWS::EC2::Image::Id
-    Default: ami-084f35aa8cd582ea7
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: >
-      DYFT web server AMI containing Nginx, Node.js, Git,
-      and the GitHub read-only deploy-key configuration.
+      Public SSM parameter for the latest Amazon Linux 2023 x86_64 AMI.
 
-  CertificateArn:
+  FrontendArtifactBucket:
     Type: String
-    Default: arn:aws:iam::987653905868:server-certificate/DYFT-LetsEncrypt-TLS
-    Description: ARN of the existing IAM server certificate used by the ALB.
+    Description: Temporary S3 bucket containing the frontend deployment artifact.
+
+  FrontendArtifactKey:
+    Type: String
+    Description: S3 object key for the frontend deployment artifact.
+
+  CloudFrontOriginPrefixListId:
+    Type: String
+    Description: AWS-managed prefix list ID for com.amazonaws.global.cloudfront.origin-facing.
 
   OperationsAlertEmail:
     Type: String
-    Description: Email address subscribed to DYFT CloudWatch operational alerts.
+    Default: ""
+    Description: Optional email address subscribed to DYFT CloudWatch operational alerts.
+
+  SesSenderEmail:
+    Type: String
+    Default: ""
+    Description: Optional SES-verified sender email address used by the notifier Lambda.
+
+  UseMockData:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether the verifier Lambda should use mock GeoNet earthquake data.
+
+
+Conditions:
+
+  HasOperationsAlertEmail: !Not [!Equals [!Ref OperationsAlertEmail, ""]]
 
 
 Resources:
+
+  # ------------------------------------------------
+  # Networking
+  # ------------------------------------------------
+
+  DyftVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.52.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-VPC"
+
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-IGW"
+
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref DyftVpc
+
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref DyftVpc
+      CidrBlock: 10.52.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-PublicSubnet1"
+
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref DyftVpc
+      CidrBlock: 10.52.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-PublicSubnet2"
+
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref DyftVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${DeploymentPrefix}-PublicRoutes"
+
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
 
   # ------------------------------------------------
   # DynamoDB
@@ -153,6 +251,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
+                  - dynamodb:Query
                 Resource:
                   - !GetAtt ReportsTable.Arn
 
@@ -276,6 +375,46 @@ Resources:
                 Resource:
                   - !GetAtt UsersTable.Arn
 
+
+  # ------------------------------------------------
+  # IAM - EC2 role
+  # ------------------------------------------------
+
+  WebServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DeploymentPrefix}-WebServerRole"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      Policies:
+        - PolicyName: DYFT-WebServer-FrontendArtifactRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${FrontendArtifactBucket}/${FrontendArtifactKey}"
+
+
+  WebServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${DeploymentPrefix}-WebServerInstanceProfile"
+      Roles:
+        - !Ref WebServerRole
+
+
   SchedulerInvokeRole:
     Type: AWS::IAM::Role
     Properties:
@@ -325,6 +464,7 @@ Resources:
       Environment:
         Variables:
           REPORTS_TABLE_NAME: !Ref ReportsTable
+          FRONTEND_ORIGIN: !Sub "https://${DyftCloudFront.DomainName}"
 
       Code:
         ZipFile: |
@@ -353,6 +493,7 @@ Resources:
       Environment:
         Variables:
           USERS_TABLE_NAME: !Ref UsersTable
+          SES_SENDER_EMAIL: !Ref SesSenderEmail
 
       Code:
         ZipFile: |
@@ -381,6 +522,7 @@ Resources:
       Environment:
         Variables:
           USERS_TABLE_NAME: !Ref UsersTable
+          FRONTEND_ORIGIN: !Sub "https://${DyftCloudFront.DomainName}"
 
       Code:
         ZipFile: |
@@ -411,7 +553,7 @@ Resources:
           DB_TABLE_NAME: !Ref ReportsTable
           QUEUE_URL: !Ref NotificationQueue
           LOOKBACK_MINUTES: "60"
-          USE_MOCK_DATA: "true"
+          USE_MOCK_DATA: !Ref UseMockData
 
       Code:
         ZipFile: |
@@ -555,8 +697,7 @@ Resources:
                 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
               method.response.header.Access-Control-Allow-Methods: >-
                 'OPTIONS,POST'
-              method.response.header.Access-Control-Allow-Origin: >-
-                'https://didyoufeelthat.devs.surf'
+              method.response.header.Access-Control-Allow-Origin: !Sub "'https://${DyftCloudFront.DomainName}'"
 
       MethodResponses:
         - StatusCode: 200
@@ -670,8 +811,7 @@ Resources:
                 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
               method.response.header.Access-Control-Allow-Methods: >-
                 'OPTIONS,POST'
-              method.response.header.Access-Control-Allow-Origin: >-
-                'https://didyoufeelthat.devs.surf'
+              method.response.header.Access-Control-Allow-Origin: !Sub "'https://${DyftCloudFront.DomainName}'"
 
       MethodResponses:
         - StatusCode: 200
@@ -724,6 +864,7 @@ Resources:
 
   OperationsAlertsEmailSubscription:
     Type: AWS::SNS::Subscription
+    Condition: HasOperationsAlertEmail
     Properties:
       TopicArn: !Ref OperationsAlertsTopic
       Protocol: email
@@ -768,19 +909,14 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: !Sub "${DeploymentPrefix}-ALB-SG"
-      GroupDescription: Allow public HTTP/HTTPS traffic to the DYFT ALB.
-      VpcId: !Ref VpcId
+      GroupDescription: Allow HTTP traffic to the DYFT ALB only from CloudFront origin-facing servers.
+      VpcId: !Ref DyftVpc
 
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 0.0.0.0/0
-
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
+          SourcePrefixListId: !Ref CloudFrontOriginPrefixListId
 
       SecurityGroupEgress:
         - IpProtocol: -1
@@ -792,7 +928,7 @@ Resources:
     Properties:
       GroupName: !Sub "${DeploymentPrefix}-EC2-SG"
       GroupDescription: Allow web traffic only from the DYFT ALB.
-      VpcId: !Ref VpcId
+      VpcId: !Ref DyftVpc
 
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -811,10 +947,15 @@ Resources:
 
   WebServer1:
     Type: AWS::EC2::Instance
+    DependsOn:
+      - PublicDefaultRoute
+      - PublicSubnet1RouteTableAssociation
+      - WebServerInstanceProfile
     Properties:
       ImageId: !Ref WebServerAmiId
       InstanceType: t3.micro
       SubnetId: !Ref PublicSubnet1
+      IamInstanceProfile: !Ref WebServerInstanceProfile
 
       SecurityGroupIds:
         - !Ref Ec2SecurityGroup
@@ -826,15 +967,20 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          set -e
+          set -euxo pipefail
 
-          cd /home/ec2-user/dyft-compx527
+          dnf update -y
+          dnf install -y nginx unzip
 
-          git fetch origin
-          git checkout main
-          git pull origin main
+          dnf install -y nodejs22 nodejs22-npm
 
-          cd frontend
+          rm -rf /home/ec2-user/dyft-compx527
+          mkdir -p /home/ec2-user/dyft-compx527
+          aws s3 cp s3://${FrontendArtifactBucket}/${FrontendArtifactKey} /tmp/frontend-source.zip --region ${AWS::Region}
+          unzip -q /tmp/frontend-source.zip -d /home/ec2-user/dyft-compx527
+          chown -R ec2-user:ec2-user /home/ec2-user/dyft-compx527
+
+          cd /home/ec2-user/dyft-compx527/frontend
 
           cat > .env <<EOF
           VITE_COGNITO_USER_POOL_ID=${DyftUserPool}
@@ -842,12 +988,16 @@ Resources:
           VITE_API_GATEWAY_URL_USERS=https://${UserRestApi}.execute-api.${AWS::Region}.amazonaws.com/dyft-dev/users
           VITE_API_GATEWAY_URL_REPORTS=https://${ReportsRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod
           EOF
+          chown ec2-user:ec2-user .env
 
-          npm ci
-          npm run build
+          sudo -u ec2-user npm ci
+          sudo -u ec2-user npm run build
 
           rm -rf /usr/share/nginx/html/*
           cp -r dist/* /usr/share/nginx/html/
+          chown -R nginx:nginx /usr/share/nginx/html
+          find /usr/share/nginx/html -type d -exec chmod 755 {} \;
+          find /usr/share/nginx/html -type f -exec chmod 644 {} \;
 
           systemctl enable nginx
           systemctl restart nginx
@@ -855,10 +1005,15 @@ Resources:
 
   WebServer2:
     Type: AWS::EC2::Instance
+    DependsOn:
+      - PublicDefaultRoute
+      - PublicSubnet2RouteTableAssociation
+      - WebServerInstanceProfile
     Properties:
       ImageId: !Ref WebServerAmiId
       InstanceType: t3.micro
       SubnetId: !Ref PublicSubnet2
+      IamInstanceProfile: !Ref WebServerInstanceProfile
 
       SecurityGroupIds:
         - !Ref Ec2SecurityGroup
@@ -870,15 +1025,20 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          set -e
+          set -euxo pipefail
 
-          cd /home/ec2-user/dyft-compx527
+          dnf update -y
+          dnf install -y nginx unzip
 
-          git fetch origin
-          git checkout main
-          git pull origin main
+          dnf install -y nodejs22 nodejs22-npm
 
-          cd frontend
+          rm -rf /home/ec2-user/dyft-compx527
+          mkdir -p /home/ec2-user/dyft-compx527
+          aws s3 cp s3://${FrontendArtifactBucket}/${FrontendArtifactKey} /tmp/frontend-source.zip --region ${AWS::Region}
+          unzip -q /tmp/frontend-source.zip -d /home/ec2-user/dyft-compx527
+          chown -R ec2-user:ec2-user /home/ec2-user/dyft-compx527
+
+          cd /home/ec2-user/dyft-compx527/frontend
 
           cat > .env <<EOF
           VITE_COGNITO_USER_POOL_ID=${DyftUserPool}
@@ -886,12 +1046,16 @@ Resources:
           VITE_API_GATEWAY_URL_USERS=https://${UserRestApi}.execute-api.${AWS::Region}.amazonaws.com/dyft-dev/users
           VITE_API_GATEWAY_URL_REPORTS=https://${ReportsRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod
           EOF
+          chown ec2-user:ec2-user .env
 
-          npm ci
-          npm run build
+          sudo -u ec2-user npm ci
+          sudo -u ec2-user npm run build
 
           rm -rf /usr/share/nginx/html/*
           cp -r dist/* /usr/share/nginx/html/
+          chown -R nginx:nginx /usr/share/nginx/html
+          find /usr/share/nginx/html -type d -exec chmod 755 {} \;
+          find /usr/share/nginx/html -type f -exec chmod 644 {} \;
 
           systemctl enable nginx
           systemctl restart nginx
@@ -906,7 +1070,7 @@ Resources:
     Properties:
       Name: !Sub "${DeploymentPrefix}-EC2-TG"
 
-      VpcId: !Ref VpcId
+      VpcId: !Ref DyftVpc
 
       Protocol: HTTP
       Port: 80
@@ -983,31 +1147,47 @@ Resources:
       Port: 80
 
       DefaultActions:
-        - Type: redirect
-          RedirectConfig:
-            Protocol: HTTPS
-            Port: "443"
-            StatusCode: HTTP_301
-
-
-  HttpsListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !Ref DyftLoadBalancer
-
-      Protocol: HTTPS
-      Port: 443
-
-      Certificates:
-        - CertificateArn: !Ref CertificateArn
-
-      SslPolicy: ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09
-
-      DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref WebTargetGroup
 
-    # ------------------------------------------------
+
+  # ------------------------------------------------
+  # CloudFront
+  # ------------------------------------------------
+
+  DyftCloudFront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+
+        Origins:
+          - Id: DYFT-ALB-Origin
+            DomainName: !GetAtt DyftLoadBalancer.DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+
+        DefaultCacheBehavior:
+          TargetOriginId: DYFT-ALB-Origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+
+  # ------------------------------------------------
   # CloudWatch Dashboard
   # ------------------------------------------------
 
@@ -1524,6 +1704,16 @@ Outputs:
     Value: !GetAtt DyftLoadBalancer.DNSName
 
 
+  FrontendUrl:
+    Description: HTTPS CloudFront URL users should open for the DYFT frontend.
+    Value: !Sub "https://${DyftCloudFront.DomainName}"
+
+
+  CloudFrontDistributionId:
+    Description: DYFT CloudFront distribution ID.
+    Value: !Ref DyftCloudFront
+
+
   UserApiUrl:
     Description: DYFT user API endpoint.
     Value: !Sub >
@@ -1559,6 +1749,11 @@ Outputs:
   OperationsAlertsTopicArn:
     Description: SNS topic used for operational CloudWatch alerts.
     Value: !Ref OperationsAlertsTopic
+
+
+  EffectiveFrontendOrigin:
+    Description: Frontend origin configured for API Gateway and Lambda CORS.
+    Value: !Sub "https://${DyftCloudFront.DomainName}"
 
 
   WebServer1InstanceId:
