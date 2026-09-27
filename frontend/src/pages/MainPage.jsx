@@ -301,14 +301,14 @@ function MainPage() {
         {hasReported && (
           <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[999] w-[420px] min-h-[120px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
-              {nearbyReportCount === 0 ? (
+              {totalNearbyCount === 1 ? (
                 <span className="text-xl font-bold">
                   You are the first person to feel this Shake within 10 km.
                 </span>
               ) : (
                 <>
                   <span className="text-4xl font-extrabold text-red-600 mr-2">
-                    {nearbyReportCount + (isReportAccepted ? 1 : 0)}
+                    {totalNearbyCount}
                   </span>
 
                   <span className="text-xl font-bold">
