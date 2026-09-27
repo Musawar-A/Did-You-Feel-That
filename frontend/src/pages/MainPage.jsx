@@ -97,9 +97,7 @@ function MainPage() {
           longitude,
         });
       },
-      (error) => {
-        console.log("Could not get location:", error);
-      },
+      (error) => {},
     );
   }, []);
 
@@ -133,7 +131,6 @@ function MainPage() {
   const handleFeltThat = async () => {
     // Make sure the user's location is available first.
     if (!userLocation) {
-      console.log("User location is not available yet.");
       return;
     }
 
@@ -165,20 +162,12 @@ function MainPage() {
       );
 
       // Display the complete response from Lambda while testing.
-      console.log("========== REPORT RESPONSE ==========");
-      console.log("Full response:", result);
-      console.log("Response body:", result?.body);
-      console.log("Response body type:", typeof result?.body);
-      console.log("Status code:", result?.statusCode);
 
       const data = result?.body;
 
       // The backend returns 429 when the user has already
       // submitted a report within the last 15 minutes.
       if (result?.statusCode === 429) {
-        console.log(
-          "Report blocked: You have already submitted a report within the last 15 minutes",
-        );
         // Store the nearby reports returned by the backend.
         // This allows the map to show the reports even though
         // this new report was rejected.
@@ -205,8 +194,6 @@ function MainPage() {
 
       // Handle other errors returned by the backend.
       if (result?.statusCode < 200 || result?.statusCode >= 300) {
-        console.error("Report submission failed:", result?.statusCode, data);
-
         return;
       }
 
@@ -225,11 +212,8 @@ function MainPage() {
 
       // The user has successfully submitted a report.
       setHasReported(true);
-
-      console.log("Report successfully registered.");
     } catch (error) {
       // If something fails, allow the user to try again.
-      console.error("Could not submit earthquake report:", error);
     } finally {
       // The request has finished, so another request can be attempted.
       setIsSubmitting(false);
