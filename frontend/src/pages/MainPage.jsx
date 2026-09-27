@@ -235,7 +235,7 @@ function MainPage() {
       setIsSubmitting(false);
     }
   };
-
+  const totalNearbyCount = nearbyReportCount + (isReportAccepted ? 1 : 0);
   return (
     <main className="min-h-screen bg-gray-100">
       {/* Page heading and report button. */}
