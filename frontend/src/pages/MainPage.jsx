@@ -177,6 +177,17 @@ function MainPage() {
         console.log(
           "Report blocked: You have already submitted a report within the last 15 minutes",
         );
+        // Store the nearby reports returned by the backend.
+        // This allows the map to show the reports even though
+        // this new report was rejected.
+        setNearbyReports(data?.nearbyReports || []);
+
+        // Store the nearby report count returned by the backend.
+        // This keeps the information from the previous report available.
+        setNearbyReportCount(data?.nearbyReportCount || 0);
+
+        //we have report information to display.
+        setHasReported(true);
 
         // Show the warning for two seconds.
         // The report result underneath stays available.
