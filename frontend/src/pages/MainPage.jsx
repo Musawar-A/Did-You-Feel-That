@@ -78,6 +78,8 @@ function MainPage() {
   // Tracks whether the user has submitted a report during this page session.
   const [hasReported, setHasReported] = useState(false);
 
+  const [isReportAccepted, setIsReportAccepted] = useState(false);
+
   // Keeps the warning timer so it can be cancelled before
   // another timer is started.
   const hideWarningTimeoutRef = useRef(null);
@@ -186,6 +188,9 @@ function MainPage() {
         // This keeps the information from the previous report available.
         setNearbyReportCount(data?.nearbyReportCount || 0);
 
+        // The previous report is already included in the backend count.
+        setIsReportAccepted(false);
+
         //we have report information to display.
         setHasReported(true);
 
@@ -213,6 +218,10 @@ function MainPage() {
 
       // Store the number returned by Lambda.
       setNearbyReportCount(data?.nearbyReportCount || 0);
+
+      // The new report is not included in the nearby count,
+      // so it needs to be included in the displayed total.
+      setIsReportAccepted(true);
 
       // The user has successfully submitted a report.
       setHasReported(true);
@@ -273,9 +282,9 @@ function MainPage() {
         />
 
         {/* Tell the user when another report cannot be submitted yet.
-            This warning appears temporarily when Lambda returns 429. */}
+    This warning appears temporarily when Lambda returns 429. */}
         {showAlreadyReported && (
-          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
+          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[1000] w-[420px] min-h-[120px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
               Your report has already been registered.
             </p>
@@ -287,10 +296,10 @@ function MainPage() {
         )}
 
         {/* Show the number of people who felt the earthquake.
-            This stays in the same position as the warning above,
-            so the warning temporarily covers it and then disappears. */}
+    This stays in the same position as the warning above,
+    so the warning temporarily covers it and then disappears. */}
         {hasReported && (
-          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[999] min-w-[320px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
+          <div className="auto-hide-message absolute top-5 left-1/2 -translate-x-1/2 z-[999] w-[420px] min-h-[120px] rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md shadow-2xl px-6 py-5">
             <p className="text-center text-gray-900 font-bold text-lg">
               {nearbyReportCount === 0 ? (
                 <span className="text-xl font-bold">
@@ -299,7 +308,7 @@ function MainPage() {
               ) : (
                 <>
                   <span className="text-4xl font-extrabold text-red-600 mr-2">
-                    {nearbyReportCount + 1}
+                    {nearbyReportCount + (isReportAccepted ? 1 : 0)}
                   </span>
 
                   <span className="text-xl font-bold">
