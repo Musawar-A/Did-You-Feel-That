@@ -1,13 +1,5 @@
 # Did You Feel That? <br><small>A Crowdsourced Earthquake Checker</small>
 
-## DYFT Team
-
-- **Musawar Ahmad (1629548)** - Group Leader, IAM, Elastic Load Balancing, CloudWatch, Automation
-- **Ernest Divina (1627071)** - Cognito and User management, Backend: Cognito Lambda, and Frontend: part user login/registration pages with Mohammad
-- **Charles Gerard Serrato (1625871)** - Backend: Verifier Lambda, EventBridge, GeoNet API, part of Ingestion Lambda
-- **Jed Thomson (1709677)** - Backend: Notifier Lambda, DynamoDB, SQS, SES, Backend Ingestion
-- **Mohammad Emon (1640350)** - Frontend: Webapp UI/UX
-
 ## Overview
 
 _Did You Feel That?_ is a cloud-based platform for real-time seismic reporting. The web app collects crowdsourced user reports of felt earthquakes across New Zealand.
